@@ -1,0 +1,225 @@
+package com.groupware.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.groupware.config.SecurityConfig;
+import com.groupware.dto.auth.AuthResponse;
+import com.groupware.exception.CustomException;
+import com.groupware.exception.ErrorCode;
+import com.groupware.security.JwtUtil;
+import com.groupware.security.UserDetailsServiceImpl;
+import com.groupware.service.AuthService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(AuthController.class)
+@Import(SecurityConfig.class)
+class AuthControllerTest {
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+
+    @MockBean private AuthService authService;
+    @MockBean private JwtUtil jwtUtil;
+    @MockBean private UserDetailsServiceImpl userDetailsService;
+
+    // ─── POST /api/auth/signup ─────────────────────────────────────────────
+
+    @Test
+    void 회원가입_성공_201() throws Exception {
+        AuthResponse stubResponse = authResponse("uid-1", "test@example.com", "테스터");
+        given(authService.signup(any())).willReturn(stubResponse);
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "test@example.com",
+                                "password", "password123",
+                                "nickname", "테스터"
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.email").value("test@example.com"))
+                .andExpect(jsonPath("$.data.nickname").value("테스터"))
+                .andExpect(jsonPath("$.data.accessToken").value("access-token"))
+                .andExpect(jsonPath("$.data.refreshToken").value("refresh-token"));
+    }
+
+    @Test
+    void 회원가입_이메일_누락_400() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "password", "password123",
+                                "nickname", "테스터"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void 회원가입_이메일_형식_오류_400() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "not-an-email",
+                                "password", "password123",
+                                "nickname", "테스터"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void 회원가입_비밀번호_7자_400() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "test@example.com",
+                                "password", "1234567",
+                                "nickname", "테스터"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void 회원가입_이메일_중복_409() throws Exception {
+        given(authService.signup(any())).willThrow(new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS));
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "dup@example.com",
+                                "password", "password123",
+                                "nickname", "중복유저"
+                        ))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ─── POST /api/auth/login ──────────────────────────────────────────────
+
+    @Test
+    void 로그인_성공_200() throws Exception {
+        AuthResponse stubResponse = authResponse("uid-1", "test@example.com", "테스터");
+        given(authService.login(any())).willReturn(stubResponse);
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "test@example.com",
+                                "password", "password123"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.userId").value("uid-1"));
+    }
+
+    @Test
+    void 로그인_잘못된_자격증명_401() throws Exception {
+        given(authService.login(any())).willThrow(new CustomException(ErrorCode.INVALID_CREDENTIALS));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "test@example.com",
+                                "password", "wrong-pw"
+                        ))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void 로그인_탈퇴한_사용자_403() throws Exception {
+        given(authService.login(any())).willThrow(new CustomException(ErrorCode.WITHDRAWN_USER));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "left@example.com",
+                                "password", "password123"
+                        ))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ─── POST /api/auth/refresh ────────────────────────────────────────────
+
+    @Test
+    void 토큰_갱신_성공_200() throws Exception {
+        AuthResponse stubResponse = authResponse("uid-1", "test@example.com", "테스터");
+        given(authService.refresh(any())).willReturn(stubResponse);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("refreshToken", "valid-refresh-token"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.accessToken").value("access-token"));
+    }
+
+    @Test
+    void 토큰_갱신_유효하지_않은_토큰_401() throws Exception {
+        given(authService.refresh(any())).willThrow(new CustomException(ErrorCode.REFRESH_TOKEN_NOT_FOUND));
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("refreshToken", "invalid-token"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void 토큰_갱신_필드_누락_400() throws Exception {
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ─── POST /api/auth/logout ─────────────────────────────────────────────
+
+    @Test
+    void 로그아웃_성공_200() throws Exception {
+        willDoNothing().given(authService).logout(any());
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("refreshToken", "some-refresh-token"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("로그아웃되었습니다."));
+    }
+
+    // ─── helpers ──────────────────────────────────────────────────────────
+
+    private String json(Object obj) throws Exception {
+        return objectMapper.writeValueAsString(obj);
+    }
+
+    private AuthResponse authResponse(String userId, String email, String nickname) {
+        return AuthResponse.builder()
+                .accessToken("access-token")
+                .refreshToken("refresh-token")
+                .userId(userId)
+                .email(email)
+                .nickname(nickname)
+                .build();
+    }
+}
