@@ -14,3 +14,8 @@ logs/
 
 # OS
 .DS_Store
+
+# Local config (sensitive values - never commit)
+application-local.yml
+*.local.yml
+.env
