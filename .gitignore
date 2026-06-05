@@ -19,3 +19,6 @@ logs/
 application-local.yml
 *.local.yml
 .env
+
+# User-uploaded files (runtime, not source)
+uploads/

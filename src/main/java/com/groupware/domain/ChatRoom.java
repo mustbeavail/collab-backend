@@ -17,11 +17,14 @@ public class ChatRoom {
     private Long roomIdx;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "team_idx", nullable = false)
+    @JoinColumn(name = "team_idx")
     private Team team;
 
     @Column(name = "room_name", length = 255)
     private String roomName;
+
+    @Column(name = "description", length = 500)
+    private String description;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

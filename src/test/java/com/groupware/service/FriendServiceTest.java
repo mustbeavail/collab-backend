@@ -7,8 +7,10 @@ import com.groupware.dto.friend.FriendResponse;
 import com.groupware.dto.user.UserSearchResponse;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
+import com.groupware.dto.notification.NotificationPayload;
 import com.groupware.repository.FriendRepository;
 import com.groupware.repository.UserRepository;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -34,6 +37,7 @@ class FriendServiceTest {
     @InjectMocks private FriendService friendService;
     @Mock private FriendRepository friendRepository;
     @Mock private UserRepository userRepository;
+    @Mock private SimpMessagingTemplate messagingTemplate;
 
     // ─── searchUsers ──────────────────────────────────────────────────────
 
@@ -73,6 +77,8 @@ class FriendServiceTest {
         friendService.sendRequest(dto, "uid-1");
 
         verify(friendRepository).save(any(Friend.class));
+        verify(messagingTemplate).convertAndSendToUser(
+                eq("uid-2"), eq("/queue/notifications"), any(NotificationPayload.class));
     }
 
     @Test

@@ -24,6 +24,17 @@ public enum ErrorCode {
     FRIEND_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "친구 요청을 찾을 수 없습니다."),
     FRIEND_NOT_FOUND(HttpStatus.NOT_FOUND, "친구 관계를 찾을 수 없습니다."),
 
+    TEAM_NOT_FOUND(HttpStatus.NOT_FOUND, "팀을 찾을 수 없습니다."),
+    TEAM_ACCESS_DENIED(HttpStatus.FORBIDDEN, "팀에 대한 권한이 없습니다."),
+    NOT_TEAM_MEMBER(HttpStatus.FORBIDDEN, "팀 멤버가 아닙니다."),
+    TEAM_ALREADY_MEMBER(HttpStatus.CONFLICT, "이미 팀 멤버이거나 초대 대기 중입니다."),
+    TEAM_INVITATION_NOT_FOUND(HttpStatus.NOT_FOUND, "팀 초대를 찾을 수 없습니다."),
+    CANNOT_INVITE_SELF(HttpStatus.BAD_REQUEST, "자기 자신을 초대할 수 없습니다."),
+    CANNOT_KICK_HIGHER_ROLE(HttpStatus.FORBIDDEN, "자신보다 높거나 같은 역할의 멤버를 추방할 수 없습니다."),
+
+    CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
+    NOT_ROOM_MEMBER(HttpStatus.FORBIDDEN, "채팅방 멤버가 아닙니다."),
+
     EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증코드가 만료되었습니다."),
     EMAIL_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증코드가 올바르지 않습니다."),

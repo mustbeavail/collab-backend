@@ -1,0 +1,360 @@
+package com.groupware.service;
+
+import com.groupware.domain.ChatRoom;
+import com.groupware.domain.Message;
+import com.groupware.domain.RoomMember;
+import com.groupware.domain.User;
+import com.groupware.dto.chat.ChatMessagePayload;
+import com.groupware.dto.chat.ChatRoomDetailResponse;
+import com.groupware.dto.chat.ChatRoomResponse;
+import com.groupware.dto.chat.InviteRequest;
+import com.groupware.dto.chat.MessagePageResponse;
+import com.groupware.dto.chat.UpdateRoomInfoRequest;
+import com.groupware.dto.chat.RoomMemberResponse;
+import com.groupware.dto.chat.SendMessageRequest;
+import com.groupware.exception.CustomException;
+import com.groupware.exception.ErrorCode;
+import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.MessageRepository;
+import com.groupware.repository.RoomMemberRepository;
+import com.groupware.repository.TeamMemberRepository;
+import com.groupware.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+
+@ExtendWith(MockitoExtension.class)
+class ChatServiceTest {
+
+    @InjectMocks private ChatService chatService;
+    @Mock private ChatRoomRepository chatRoomRepository;
+    @Mock private MessageRepository messageRepository;
+    @Mock private RoomMemberRepository roomMemberRepository;
+    @Mock private TeamMemberRepository teamMemberRepository;
+    @Mock private UserRepository userRepository;
+    @Mock private SimpMessagingTemplate messagingTemplate;
+
+    private User userA;
+    private User userB;
+    private ChatRoom room;
+
+    @BeforeEach
+    void setUp() {
+        userA = new User();
+        ReflectionTestUtils.setField(userA, "userId", "a@test.com");
+        ReflectionTestUtils.setField(userA, "nick", "Alice");
+
+        userB = new User();
+        ReflectionTestUtils.setField(userB, "userId", "b@test.com");
+        ReflectionTestUtils.setField(userB, "nick", "Bob");
+
+        room = new ChatRoom();
+        ReflectionTestUtils.setField(room, "roomIdx", 1L);
+        ReflectionTestUtils.setField(room, "roomName", "general");
+    }
+
+    private Message makeMsg(long idx, String content) {
+        Message msg = new Message();
+        ReflectionTestUtils.setField(msg, "msgIdx", idx);
+        ReflectionTestUtils.setField(msg, "user", userA);
+        ReflectionTestUtils.setField(msg, "chatRoom", room);
+        ReflectionTestUtils.setField(msg, "content", content);
+        ReflectionTestUtils.setField(msg, "msgType", "TEXT");
+        ReflectionTestUtils.setField(msg, "sentAt", LocalDateTime.now());
+        ReflectionTestUtils.setField(msg, "delYn", false);
+        return msg;
+    }
+
+    @Test
+    void 최근_메시지_조회_성공_hasMore_false() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(messageRepository.findLatestMessages(eq(room), any(Pageable.class)))
+                .willReturn(List.of(makeMsg(2L, "b"), makeMsg(1L, "a")));
+
+        MessagePageResponse result = chatService.getMessages("a@test.com", 1L, null, 50);
+
+        assertThat(result.getMessages()).hasSize(2);
+        assertThat(result.getMessages().get(0).getContent()).isEqualTo("a");
+        assertThat(result.isHasMore()).isFalse();
+    }
+
+    @Test
+    void 최근_메시지_조회_hasMore_true() {
+        List<Message> fetched = new ArrayList<>();
+        for (int i = 51; i >= 1; i--) fetched.add(makeMsg(i, "msg" + i));
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(messageRepository.findLatestMessages(eq(room), any(Pageable.class))).willReturn(fetched);
+
+        MessagePageResponse result = chatService.getMessages("a@test.com", 1L, null, 50);
+
+        assertThat(result.getMessages()).hasSize(50);
+        assertThat(result.isHasMore()).isTrue();
+    }
+
+    @Test
+    void before_커서_기반_조회() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(messageRepository.findMessagesBefore(eq(room), eq(10L), any(Pageable.class)))
+                .willReturn(List.of(makeMsg(9L, "old"), makeMsg(8L, "older")));
+
+        MessagePageResponse result = chatService.getMessages("a@test.com", 1L, 10L, 50);
+
+        assertThat(result.getMessages()).hasSize(2);
+        assertThat(result.getMessages().get(0).getMsgIdx()).isEqualTo(8L);
+        assertThat(result.isHasMore()).isFalse();
+    }
+
+    @Test
+    void 최근_메시지_조회_방없음_예외() {
+        given(chatRoomRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.getMessages("a@test.com", 99L, null, 50))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void 최근_메시지_조회_멤버아님_예외() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(false);
+
+        assertThatThrownBy(() -> chatService.getMessages("a@test.com", 1L, null, 50))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NOT_ROOM_MEMBER);
+    }
+
+    @Test
+    void 메시지_전송_성공_WebSocket_브로드캐스트() {
+        SendMessageRequest req = new SendMessageRequest();
+        ReflectionTestUtils.setField(req, "content", "hi");
+        ReflectionTestUtils.setField(req, "msgType", "TEXT");
+
+        Message saved = makeMsg(10L, "hi");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(messageRepository.save(any(Message.class))).willReturn(saved);
+
+        chatService.sendMessage("a@test.com", 1L, req);
+
+        ArgumentCaptor<ChatMessagePayload> captor = ArgumentCaptor.forClass(ChatMessagePayload.class);
+        verify(messagingTemplate).convertAndSend(eq("/topic/room/1"), captor.capture());
+        assertThat(captor.getValue().getContent()).isEqualTo("hi");
+        assertThat(captor.getValue().getRoomIdx()).isEqualTo(1L);
+    }
+
+    @Test
+    void DM방_없으면_새로_생성() {
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.empty());
+
+        ChatRoom newRoom = new ChatRoom();
+        ReflectionTestUtils.setField(newRoom, "roomIdx", 5L);
+        ReflectionTestUtils.setField(newRoom, "roomName", "Alice, Bob");
+        given(chatRoomRepository.save(any(ChatRoom.class))).willReturn(newRoom);
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+
+        ChatRoomResponse resp = chatService.getOrCreateDmRoom("a@test.com", "b@test.com");
+
+        assertThat(resp.getRoomIdx()).isEqualTo(5L);
+    }
+
+    @Test
+    void 멤버_목록_조회_성공() {
+        RoomMember rm = new RoomMember();
+        ReflectionTestUtils.setField(rm, "user", userA);
+        ReflectionTestUtils.setField(rm, "role", "OWNER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(rm));
+
+        List<RoomMemberResponse> result = chatService.getRoomMembers("a@test.com", 1L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getRole()).isEqualTo("OWNER");
+    }
+
+    @Test
+    void 초대_성공() {
+        InviteRequest req = new InviteRequest();
+        ReflectionTestUtils.setField(req, "userId", "b@test.com");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userB)).willReturn(false);
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+
+        chatService.inviteToRoom("a@test.com", 1L, req);
+
+        verify(roomMemberRepository).save(any(RoomMember.class));
+    }
+
+    @Test
+    void 나가기_성공() {
+        RoomMember rm = new RoomMember();
+        ReflectionTestUtils.setField(rm, "user", userA);
+        ReflectionTestUtils.setField(rm, "role", "MEMBER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(rm));
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+
+        chatService.leaveRoom("a@test.com", 1L);
+
+        assertThat(rm.getExitAt()).isNotNull();
+    }
+
+    @Test
+    void 추방_성공_방장만() {
+        RoomMember ownerMember = new RoomMember();
+        ReflectionTestUtils.setField(ownerMember, "user", userA);
+        ReflectionTestUtils.setField(ownerMember, "role", "OWNER");
+
+        RoomMember targetMember = new RoomMember();
+        ReflectionTestUtils.setField(targetMember, "user", userB);
+        ReflectionTestUtils.setField(targetMember, "role", "MEMBER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(ownerMember));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userB)).willReturn(Optional.of(targetMember));
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+
+        chatService.kickMember("a@test.com", 1L, "b@test.com");
+
+        assertThat(targetMember.getExitAt()).isNotNull();
+    }
+
+    @Test
+    void 추방_방장아니면_예외() {
+        RoomMember memberRole = new RoomMember();
+        ReflectionTestUtils.setField(memberRole, "user", userA);
+        ReflectionTestUtils.setField(memberRole, "role", "MEMBER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(memberRole));
+
+        assertThatThrownBy(() -> chatService.kickMember("a@test.com", 1L, "b@test.com"))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void 방정보_조회_성공() {
+        ReflectionTestUtils.setField(room, "description", "테스트 설명");
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+
+        ChatRoomDetailResponse result = chatService.getRoomInfo("a@test.com", 1L);
+
+        assertThat(result.getRoomName()).isEqualTo("general");
+        assertThat(result.getDescription()).isEqualTo("테스트 설명");
+        assertThat(result.isDm()).isTrue();
+    }
+
+    @Test
+    void 방정보_수정_성공_방장만() {
+        RoomMember ownerMember = new RoomMember();
+        ReflectionTestUtils.setField(ownerMember, "user", userA);
+        ReflectionTestUtils.setField(ownerMember, "role", "OWNER");
+
+        UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
+        ReflectionTestUtils.setField(req, "roomName", "새이름");
+        ReflectionTestUtils.setField(req, "description", "새설명");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(ownerMember));
+        given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> inv.getArgument(0));
+
+        ChatRoomDetailResponse result = chatService.updateRoomInfo("a@test.com", 1L, req);
+
+        assertThat(result.getRoomName()).isEqualTo("새이름");
+        assertThat(result.getDescription()).isEqualTo("새설명");
+    }
+
+    @Test
+    void 방정보_수정_방장아님_예외() {
+        RoomMember memberRole = new RoomMember();
+        ReflectionTestUtils.setField(memberRole, "user", userA);
+        ReflectionTestUtils.setField(memberRole, "role", "MEMBER");
+
+        UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
+        ReflectionTestUtils.setField(req, "roomName", "새이름");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(memberRole));
+
+        assertThatThrownBy(() -> chatService.updateRoomInfo("a@test.com", 1L, req))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void 방정보_수정_팀채널_예외() {
+        com.groupware.domain.Team team = new com.groupware.domain.Team();
+        ReflectionTestUtils.setField(room, "team", team);
+
+        UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
+        ReflectionTestUtils.setField(req, "roomName", "새이름");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> chatService.updateRoomInfo("a@test.com", 1L, req))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void DM방_이미_존재하면_기존_반환() {
+        ChatRoom existing = new ChatRoom();
+        ReflectionTestUtils.setField(existing, "roomIdx", 3L);
+        ReflectionTestUtils.setField(existing, "roomName", "Alice, Bob");
+
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.of(existing));
+
+        ChatRoomResponse resp = chatService.getOrCreateDmRoom("a@test.com", "b@test.com");
+
+        assertThat(resp.getRoomIdx()).isEqualTo(3L);
+    }
+}

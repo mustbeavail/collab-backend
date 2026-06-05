@@ -10,6 +10,7 @@ import java.util.List;
 public class TeamSidebarResponse {
     private Long teamIdx;
     private String teamName;
+    private String about;
     private String myRole;
     private List<TeamChannelDto> channels;
     private List<TeamMemberDto> members;
