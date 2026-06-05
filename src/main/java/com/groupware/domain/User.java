@@ -32,4 +32,7 @@ public class User {
 
     @Column(name = "withdrwal_at")
     private LocalDateTime withdrwalAt;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
 }

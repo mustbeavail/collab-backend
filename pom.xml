@@ -111,6 +111,9 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                    <profiles>
+                        <profile>local</profile>
+                    </profiles>
                 </configuration>
             </plugin>
         </plugins>

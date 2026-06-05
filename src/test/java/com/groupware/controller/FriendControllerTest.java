@@ -9,6 +9,7 @@ import com.groupware.exception.ErrorCode;
 import com.groupware.security.JwtUtil;
 import com.groupware.security.UserDetailsServiceImpl;
 import com.groupware.service.FriendService;
+import com.groupware.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -37,6 +38,7 @@ class FriendControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private FriendService friendService;
+    @MockBean private UserService userService;
     @MockBean private JwtUtil jwtUtil;
     @MockBean private UserDetailsServiceImpl userDetailsService;
 
