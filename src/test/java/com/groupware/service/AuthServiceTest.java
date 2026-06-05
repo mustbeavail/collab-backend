@@ -58,7 +58,7 @@ class AuthServiceTest {
     @Test
     void 회원가입_성공() {
         SignupRequest request = signupRequest("test@example.com", "password123", "테스터");
-        given(userRepository.existsByMailAdr("test@example.com")).willReturn(false);
+        given(userRepository.existsById("test@example.com")).willReturn(false);
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
         given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
@@ -74,7 +74,7 @@ class AuthServiceTest {
     @Test
     void 회원가입_이메일_중복_예외() {
         SignupRequest request = signupRequest("dup@example.com", "password123", "중복유저");
-        given(userRepository.existsByMailAdr("dup@example.com")).willReturn(true);
+        given(userRepository.existsById("dup@example.com")).willReturn(true);
 
         assertThatThrownBy(() -> authService.signup(request))
                 .isInstanceOf(CustomException.class)
@@ -88,7 +88,7 @@ class AuthServiceTest {
     void 로그인_성공() {
         LoginRequest request = loginRequest("test@example.com", "password123");
         User user = buildUser("uid-1", "test@example.com", "encoded-pw", "테스터", null);
-        given(userRepository.findByMailAdr("test@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("password123", "encoded-pw")).willReturn(true);
         given(jwtUtil.generateAccessToken("uid-1")).willReturn("access-token");
 
@@ -101,19 +101,19 @@ class AuthServiceTest {
     @Test
     void 로그인_존재하지_않는_이메일_예외() {
         LoginRequest request = loginRequest("none@example.com", "password123");
-        given(userRepository.findByMailAdr("none@example.com")).willReturn(Optional.empty());
+        given(userRepository.findById("none@example.com")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+                        .isEqualTo(ErrorCode.EMAIL_NOT_REGISTERED));
     }
 
     @Test
     void 로그인_비밀번호_불일치_예외() {
         LoginRequest request = loginRequest("test@example.com", "wrong-pw");
         User user = buildUser("uid-1", "test@example.com", "encoded-pw", "테스터", null);
-        given(userRepository.findByMailAdr("test@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("wrong-pw", "encoded-pw")).willReturn(false);
 
         assertThatThrownBy(() -> authService.login(request))
@@ -126,7 +126,7 @@ class AuthServiceTest {
     void 로그인_탈퇴한_사용자_예외() {
         LoginRequest request = loginRequest("left@example.com", "password123");
         User user = buildUser("uid-2", "left@example.com", "encoded-pw", "탈퇴자", LocalDateTime.now().minusDays(1));
-        given(userRepository.findByMailAdr("left@example.com")).willReturn(Optional.of(user));
+        given(userRepository.findById("left@example.com")).willReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(CustomException.class)
@@ -195,7 +195,6 @@ class AuthServiceTest {
     private User buildUser(String userId, String email, String pw, String nick, LocalDateTime withdrawnAt) {
         User user = new User();
         user.setUserId(userId);
-        user.setMailAdr(email);
         user.setPw(pw);
         user.setNick(nick);
         user.setWithdrwalAt(withdrawnAt);

@@ -40,7 +40,7 @@ class FriendServiceTest {
     @Test
     void 사용자_검색_자신_제외() {
         User other = buildUser("uid-2", "other@test.com", "다른유저");
-        given(userRepository.searchByNickOrEmail("유저")).willReturn(List.of(other));
+        given(userRepository.searchByNickOrId("유저")).willReturn(List.of(other));
 
         List<UserSearchResponse> result = friendService.searchUsers("유저", "uid-1");
 
@@ -51,7 +51,7 @@ class FriendServiceTest {
     @Test
     void 사용자_검색_자신_포함시_제외됨() {
         User me = buildUser("uid-1", "me@test.com", "나");
-        given(userRepository.searchByNickOrEmail("나")).willReturn(List.of(me));
+        given(userRepository.searchByNickOrId("나")).willReturn(List.of(me));
 
         List<UserSearchResponse> result = friendService.searchUsers("나", "uid-1");
 
@@ -226,7 +226,6 @@ class FriendServiceTest {
     private User buildUser(String userId, String email, String nick) {
         User u = new User();
         u.setUserId(userId);
-        u.setMailAdr(email);
         u.setNick(nick);
         return u;
     }

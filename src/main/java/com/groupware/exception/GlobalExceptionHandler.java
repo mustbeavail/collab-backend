@@ -19,7 +19,7 @@ public class GlobalExceptionHandler {
         log.warn("[CustomException] {} - {}", e.getErrorCode(), e.getMessage());
         return ResponseEntity
                 .status(e.getErrorCode().getStatus())
-                .body(ApiResponse.error(e.getMessage()));
+                .body(ApiResponse.error(e.getErrorCode().name(), e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining(", "));
         log.warn("[ValidationException] {}", message);
-        return ResponseEntity.badRequest().body(ApiResponse.error(message));
+        return ResponseEntity.badRequest().body(ApiResponse.error("VALIDATION_ERROR", message));
     }
 
     @ExceptionHandler(Exception.class)
@@ -36,6 +36,6 @@ public class GlobalExceptionHandler {
         log.error("[UnhandledException] {}", e.getMessage(), e);
         return ResponseEntity
                 .status(ErrorCode.INTERNAL_ERROR.getStatus())
-                .body(ApiResponse.error(ErrorCode.INTERNAL_ERROR.getMessage()));
+                .body(ApiResponse.error(ErrorCode.INTERNAL_ERROR.name(), ErrorCode.INTERNAL_ERROR.getMessage()));
     }
 }

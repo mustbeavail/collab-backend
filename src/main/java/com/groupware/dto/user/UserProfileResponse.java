@@ -20,7 +20,7 @@ public class UserProfileResponse {
     public static UserProfileResponse from(User user) {
         return UserProfileResponse.builder()
                 .userId(user.getUserId())
-                .email(user.getMailAdr())
+                .email(user.getUserId())
                 .nickname(user.getNick())
                 .about(user.getAbout())
                 .avatarUrl(user.getAvatarUrl())

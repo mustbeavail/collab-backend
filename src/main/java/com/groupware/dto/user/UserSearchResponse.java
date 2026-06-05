@@ -16,7 +16,7 @@ public class UserSearchResponse {
         return UserSearchResponse.builder()
                 .userId(user.getUserId())
                 .nickname(user.getNick())
-                .email(user.getMailAdr())
+                .email(user.getUserId())
                 .build();
     }
 }

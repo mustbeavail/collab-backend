@@ -36,13 +36,12 @@ public class AuthService {
 
     @Transactional
     public AuthResponse signup(SignupRequest request) {
-        if (userRepository.existsByMailAdr(request.getEmail())) {
+        if (userRepository.existsById(request.getEmail())) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
         User user = new User();
-        user.setUserId(UUID.randomUUID().toString());
-        user.setMailAdr(request.getEmail());
+        user.setUserId(request.getEmail());
         user.setPw(passwordEncoder.encode(request.getPassword()));
         user.setNick(request.getNickname());
         user.setJoinAt(LocalDateTime.now());
@@ -53,8 +52,8 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByMailAdr(request.getEmail())
-                .orElseThrow(() -> new CustomException(ErrorCode.INVALID_CREDENTIALS));
+        User user = userRepository.findById(request.getEmail())
+                .orElseThrow(() -> new CustomException(ErrorCode.EMAIL_NOT_REGISTERED));
 
         if (user.getWithdrwalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
@@ -102,7 +101,7 @@ public class AuthService {
                 .refreshToken(refreshToken)
                 .userId(user.getUserId())
                 .nickname(user.getNick())
-                .email(user.getMailAdr())
+                .email(user.getUserId())
                 .build();
     }
 }

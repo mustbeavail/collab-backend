@@ -12,14 +12,11 @@ import java.time.LocalDateTime;
 public class User {
 
     @Id
-    @Column(name = "user_id", length = 40, nullable = false)
+    @Column(name = "user_id", length = 254, nullable = false)
     private String userId;
 
     @Column(name = "pw", length = 100)
     private String pw;
-
-    @Column(name = "mail_adr", length = 40)
-    private String mailAdr;
 
     @Column(name = "nick", length = 40)
     private String nick;

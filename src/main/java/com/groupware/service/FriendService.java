@@ -23,7 +23,7 @@ public class FriendService {
     private final UserRepository userRepository;
 
     public List<UserSearchResponse> searchUsers(String q, String myUserId) {
-        return userRepository.searchByNickOrEmail(q).stream()
+        return userRepository.searchByNickOrId(q).stream()
                 .filter(u -> !u.getUserId().equals(myUserId))
                 .map(UserSearchResponse::from)
                 .toList();

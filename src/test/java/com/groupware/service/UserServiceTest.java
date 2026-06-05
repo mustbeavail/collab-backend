@@ -41,7 +41,7 @@ class UserServiceTest {
         UserProfileResponse result = userService.getMyProfile("uid-1");
 
         assertThat(result.getUserId()).isEqualTo("uid-1");
-        assertThat(result.getEmail()).isEqualTo("test@test.com");
+        assertThat(result.getEmail()).isEqualTo("uid-1");
         assertThat(result.getNickname()).isEqualTo("테스터");
         assertThat(result.getAbout()).isEqualTo("안녕하세요");
     }
@@ -309,7 +309,6 @@ class UserServiceTest {
     private User buildUser(String id, String email, String nick, String about, LocalDateTime withdrwalAt) {
         User user = new User();
         user.setUserId(id);
-        user.setMailAdr(email);
         user.setNick(nick);
         user.setAbout(about);
         user.setJoinAt(LocalDateTime.of(2026, 1, 1, 0, 0));

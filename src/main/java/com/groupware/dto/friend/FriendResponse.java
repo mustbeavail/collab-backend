@@ -21,7 +21,7 @@ public class FriendResponse {
                 .friendIdx(f.getFriendIdx())
                 .userId(other.getUserId())
                 .nickname(other.getNick())
-                .email(other.getMailAdr())
+                .email(other.getUserId())
                 .status(f.getStatus())
                 .build();
     }
