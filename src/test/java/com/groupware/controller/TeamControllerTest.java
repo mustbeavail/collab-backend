@@ -48,7 +48,7 @@ class TeamControllerTest {
                 .teamIdx(1L)
                 .teamName("Team Alpha")
                 .myRole("LEADER")
-                .channels(List.of(new TeamChannelDto(1L, "general"), new TeamChannelDto(2L, "random")))
+                .channels(List.of(new TeamChannelDto(1L, "general", false), new TeamChannelDto(2L, "random", false)))
                 .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
                 .build();
 
@@ -89,7 +89,7 @@ class TeamControllerTest {
     void 팀_생성_201() throws Exception {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(10L).teamName("새팀").myRole("LEADER")
-                .channels(List.of(new TeamChannelDto(1L, "general")))
+                .channels(List.of(new TeamChannelDto(1L, "general", false)))
                 .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
                 .build();
 
@@ -310,6 +310,62 @@ class TeamControllerTest {
         mockMvc.perform(patch("/api/teams/1/members/uid-2/role").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"MANAGER\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─── DELETE /api/teams/{teamIdx}/leave ────────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 팀_나가기_200() throws Exception {
+        willDoNothing().given(teamService).leaveTeam("uid-1", 1L);
+
+        mockMvc.perform(delete("/api/teams/1/leave").with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 팀_나가기_리더_403() throws Exception {
+        willThrow(new CustomException(ErrorCode.LEADER_CANNOT_LEAVE))
+                .given(teamService).leaveTeam("uid-1", 1L);
+
+        mockMvc.perform(delete("/api/teams/1/leave").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void 팀_나가기_미인증_401() throws Exception {
+        mockMvc.perform(delete("/api/teams/1/leave").with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ─── POST /api/teams/{teamIdx}/channels/{roomIdx}/join ────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 채널_참여_200() throws Exception {
+        TeamSidebarResponse response = TeamSidebarResponse.builder()
+                .teamIdx(1L).teamName("팀A").myRole("MEMBER")
+                .channels(List.of(new TeamChannelDto(10L, "general", true))).members(List.of())
+                .build();
+
+        given(teamService.joinChannel("uid-1", 1L, 10L)).willReturn(response);
+
+        mockMvc.perform(post("/api/teams/1/channels/10/join").with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.channels[0].joined").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 채널_참여_팀멤버_아님_403() throws Exception {
+        willThrow(new CustomException(ErrorCode.NOT_TEAM_MEMBER))
+                .given(teamService).joinChannel("uid-1", 1L, 10L);
+
+        mockMvc.perform(post("/api/teams/1/channels/10/join").with(csrf()))
                 .andExpect(status().isForbidden());
     }
 

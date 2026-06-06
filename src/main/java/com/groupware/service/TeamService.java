@@ -1,6 +1,7 @@
 package com.groupware.service;
 
 import com.groupware.domain.ChatRoom;
+import com.groupware.domain.RoomMember;
 import com.groupware.domain.Team;
 import com.groupware.domain.TeamMember;
 import com.groupware.domain.User;
@@ -8,6 +9,7 @@ import com.groupware.dto.team.*;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.TeamRepository;
 import com.groupware.repository.UserRepository;
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +29,7 @@ public class TeamService {
     private final TeamMemberRepository teamMemberRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final UserRepository userRepository;
+    private final RoomMemberRepository roomMemberRepository;
 
     @Transactional(readOnly = true)
     public List<TeamSidebarResponse> getMyTeams(String userId) {
@@ -56,7 +60,14 @@ public class TeamService {
         general.setTeam(team);
         general.setRoomName("general");
         general.setCreatedAt(LocalDateTime.now());
-        chatRoomRepository.save(general);
+        general = chatRoomRepository.save(general);
+
+        RoomMember creatorRoomMember = new RoomMember();
+        creatorRoomMember.setChatRoom(general);
+        creatorRoomMember.setUser(user);
+        creatorRoomMember.setRole("MEMBER");
+        creatorRoomMember.setJoinAt(LocalDateTime.now());
+        roomMemberRepository.save(creatorRoomMember);
 
         return toSidebarResponse(team, userId);
     }
@@ -235,6 +246,57 @@ public class TeamService {
         return toSidebarResponse(team, userId);
     }
 
+    // ─── 팀 나가기 ────────────────────────────────────────────────────────────────
+
+    @Transactional
+    public void leaveTeam(String userId, Long teamIdx) {
+        teamRepository.findById(teamIdx)
+                .filter(t -> t.getDelAt() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.TEAM_NOT_FOUND));
+
+        TeamMember member = teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+
+        if ("LEADER".equals(member.getRole())) {
+            throw new CustomException(ErrorCode.LEADER_CANNOT_LEAVE);
+        }
+
+        member.setExitAt(LocalDateTime.now());
+        teamMemberRepository.save(member);
+    }
+
+    // ─── 채널 참여 ────────────────────────────────────────────────────────────────
+
+    @Transactional
+    public TeamSidebarResponse joinChannel(String userId, Long teamIdx, Long roomIdx) {
+        Team team = teamRepository.findById(teamIdx)
+                .filter(t -> t.getDelAt() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.TEAM_NOT_FOUND));
+
+        teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+
+        ChatRoom chatRoom = chatRoomRepository.findById(roomIdx)
+                .filter(r -> r.getTeam() != null && r.getTeam().getTeamIdx().equals(teamIdx) && r.getDelDate() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        if (roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(chatRoom, user)) {
+            return toSidebarResponse(team, userId);
+        }
+
+        RoomMember roomMember = new RoomMember();
+        roomMember.setChatRoom(chatRoom);
+        roomMember.setUser(user);
+        roomMember.setRole("MEMBER");
+        roomMember.setJoinAt(LocalDateTime.now());
+        roomMemberRepository.save(roomMember);
+
+        return toSidebarResponse(team, userId);
+    }
+
     // ─── 내부 ─────────────────────────────────────────────────────────────────
 
     private TeamSidebarResponse toSidebarResponse(Team team, String userId) {
@@ -247,13 +309,20 @@ public class TeamService {
                 .findFirst()
                 .orElse("MEMBER");
 
+        Set<Long> joinedRoomIds = Set.of();
+        if (!channels.isEmpty()) {
+            List<Long> roomIds = channels.stream().map(ChatRoom::getRoomIdx).toList();
+            joinedRoomIds = Set.copyOf(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(userId, roomIds));
+        }
+        final Set<Long> joined = joinedRoomIds;
+
         return TeamSidebarResponse.builder()
                 .teamIdx(team.getTeamIdx())
                 .teamName(team.getTeamName())
                 .about(team.getAbout())
                 .myRole(myRole)
                 .channels(channels.stream()
-                        .map(ch -> new TeamChannelDto(ch.getRoomIdx(), ch.getRoomName()))
+                        .map(ch -> new TeamChannelDto(ch.getRoomIdx(), ch.getRoomName(), joined.contains(ch.getRoomIdx())))
                         .toList())
                 .members(members.stream()
                         .map(m -> new TeamMemberDto(m.getUser().getUserId(), m.getUser().getNick(), m.getRole()))

@@ -8,4 +8,5 @@ import lombok.Getter;
 public class TeamChannelDto {
     private Long roomIdx;
     private String roomName;
+    private boolean joined;
 }

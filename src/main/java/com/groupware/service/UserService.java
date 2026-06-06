@@ -49,7 +49,10 @@ public class UserService {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
         user.setNick(request.getNickname());
-        user.setAbout(request.getAbout());
+        // null이면 기존 about 유지, 빈 문자열("")은 의도적 삭제로 허용
+        if (request.getAbout() != null) {
+            user.setAbout(request.getAbout());
+        }
         userRepository.save(user);
         return UserProfileResponse.from(user);
     }
@@ -117,6 +120,11 @@ public class UserService {
             throw new CustomException(ErrorCode.USER_NOT_FOUND);
         }
         return UserProfileResponse.from(user);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isNicknameAvailable(String currentUserId, String nickname) {
+        return !userRepository.existsNickByOtherUser(nickname, currentUserId);
     }
 
     private String extractExtension(String originalFilename) {

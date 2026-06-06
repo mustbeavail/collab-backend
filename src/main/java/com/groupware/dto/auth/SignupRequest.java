@@ -19,4 +19,7 @@ public class SignupRequest {
     @NotBlank(message = "닉네임은 필수입니다.")
     @Size(max = 20, message = "닉네임은 20자 이하여야 합니다.")
     private String nickname;
+
+    @Size(max = 500, message = "소개는 500자 이하여야 합니다.")
+    private String about;
 }

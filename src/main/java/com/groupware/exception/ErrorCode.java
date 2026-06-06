@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다."),
+    NICKNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다."),
     EMAIL_NOT_REGISTERED(HttpStatus.UNAUTHORIZED, "등록되지 않은 이메일입니다."),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "비밀번호가 올바르지 않습니다."),
     INVALID_TOKEN(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
@@ -31,6 +32,7 @@ public enum ErrorCode {
     TEAM_INVITATION_NOT_FOUND(HttpStatus.NOT_FOUND, "팀 초대를 찾을 수 없습니다."),
     CANNOT_INVITE_SELF(HttpStatus.BAD_REQUEST, "자기 자신을 초대할 수 없습니다."),
     CANNOT_KICK_HIGHER_ROLE(HttpStatus.FORBIDDEN, "자신보다 높거나 같은 역할의 멤버를 추방할 수 없습니다."),
+    LEADER_CANNOT_LEAVE(HttpStatus.FORBIDDEN, "팀장은 팀을 나갈 수 없습니다. 팀을 삭제하거나 역할을 위임하세요."),
 
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
     NOT_ROOM_MEMBER(HttpStatus.FORBIDDEN, "채팅방 멤버가 아닙니다."),

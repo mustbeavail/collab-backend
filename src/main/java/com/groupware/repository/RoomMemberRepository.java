@@ -18,4 +18,7 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, Long> {
 
     @Query("SELECT rm FROM RoomMember rm JOIN FETCH rm.user WHERE rm.chatRoom = :room AND rm.exitAt IS NULL")
     List<RoomMember> findAllActiveByRoom(@Param("room") ChatRoom room);
+
+    @Query("SELECT rm.chatRoom.roomIdx FROM RoomMember rm WHERE rm.user.userId = :userId AND rm.chatRoom.roomIdx IN :roomIds AND rm.exitAt IS NULL")
+    List<Long> findJoinedRoomIdxByUserIdAndRoomIds(@Param("userId") String userId, @Param("roomIds") List<Long> roomIds);
 }

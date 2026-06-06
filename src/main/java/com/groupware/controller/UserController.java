@@ -69,6 +69,14 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok(userService.getUserPublicProfile(userId)));
     }
 
+    @GetMapping("/check-nickname")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> checkNickname(
+            @RequestParam String nickname,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        boolean available = userService.isNicknameAvailable(userDetails.getUsername(), nickname);
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("available", available)));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<UserSearchResponse>>> search(
             @RequestParam String q,

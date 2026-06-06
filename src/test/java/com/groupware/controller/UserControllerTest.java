@@ -271,6 +271,36 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
     }
 
+    // ─── GET /api/users/check-nickname ───────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 닉네임_중복확인_사용가능_200() throws Exception {
+        given(userService.isNicknameAvailable("uid-1", "새닉네임")).willReturn(true);
+
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "새닉네임"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.available").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 닉네임_중복확인_중복_200() throws Exception {
+        given(userService.isNicknameAvailable("uid-1", "중복닉네임")).willReturn(false);
+
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "중복닉네임"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.available").value(false));
+    }
+
+    @Test
+    void 닉네임_중복확인_미인증_401() throws Exception {
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "닉네임"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ─── GET /api/users/{userId} ──────────────────────────────────────────
 
     @Test

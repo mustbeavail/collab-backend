@@ -100,4 +100,25 @@ public class TeamController {
         return ResponseEntity.ok(ApiResponse.ok(
                 teamService.changeMemberRole(userDetails.getUsername(), teamIdx, targetUserId, request)));
     }
+
+    // ─── 팀 나가기 ────────────────────────────────────────────────────────────────
+
+    @DeleteMapping("/{teamIdx}/leave")
+    public ResponseEntity<ApiResponse<Void>> leaveTeam(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long teamIdx) {
+        teamService.leaveTeam(userDetails.getUsername(), teamIdx);
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
+    // ─── 채널 참여 ────────────────────────────────────────────────────────────────
+
+    @PostMapping("/{teamIdx}/channels/{roomIdx}/join")
+    public ResponseEntity<ApiResponse<TeamSidebarResponse>> joinChannel(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long teamIdx,
+            @PathVariable Long roomIdx) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                teamService.joinChannel(userDetails.getUsername(), teamIdx, roomIdx)));
+    }
 }

@@ -11,4 +11,11 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     @Query("SELECT u FROM User u WHERE u.withdrwalAt IS NULL AND (u.nick LIKE %:q% OR u.userId LIKE %:q%)")
     List<User> searchByNickOrId(@Param("q") String q);
+
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE u.nick = :nick AND u.withdrwalAt IS NULL AND u.userId != :excludeUserId")
+    boolean existsNickByOtherUser(@Param("nick") String nick, @Param("excludeUserId") String excludeUserId);
+
+    boolean existsByUserIdAndWithdrwalAtIsNull(String userId);
+
+    boolean existsByNickAndWithdrwalAtIsNull(String nick);
 }

@@ -1,6 +1,7 @@
 package com.groupware.service;
 
 import com.groupware.domain.ChatRoom;
+import com.groupware.domain.RoomMember;
 import com.groupware.domain.Team;
 import com.groupware.domain.TeamMember;
 import com.groupware.domain.User;
@@ -8,6 +9,7 @@ import com.groupware.dto.team.*;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.TeamRepository;
 import com.groupware.repository.UserRepository;
@@ -24,6 +26,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,6 +40,7 @@ class TeamServiceTest {
     @Mock private TeamMemberRepository teamMemberRepository;
     @Mock private ChatRoomRepository chatRoomRepository;
     @Mock private UserRepository userRepository;
+    @Mock private RoomMemberRepository roomMemberRepository;
 
     @Test
     void 내_팀_목록_정상_반환() {
@@ -50,6 +55,7 @@ class TeamServiceTest {
         given(teamRepository.findActiveTeamsByUserId("uid-1")).willReturn(List.of(team));
         given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(tm1, tm2));
         given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of(ch1, ch2));
+        given(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(anyString(), anyList())).willReturn(List.of(1L, 2L));
 
         List<TeamSidebarResponse> result = teamService.getMyTeams("uid-1");
 
@@ -134,11 +140,13 @@ class TeamServiceTest {
         given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
         given(teamRepository.save(any(Team.class))).willReturn(savedTeam);
         given(teamMemberRepository.save(any(TeamMember.class))).willReturn(new TeamMember());
-        given(chatRoomRepository.save(any(ChatRoom.class))).willReturn(new ChatRoom());
+        given(chatRoomRepository.save(any(ChatRoom.class))).willReturn(buildChatRoom(1L, savedTeam, "general"));
+        given(roomMemberRepository.save(any(RoomMember.class))).willReturn(new RoomMember());
         given(teamMemberRepository.findActiveByTeamIdx(10L)).willReturn(
                 List.of(buildTeamMember(savedTeam, user, "LEADER")));
         given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(10L)).willReturn(
                 List.of(buildChatRoom(1L, savedTeam, "general")));
+        given(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(anyString(), anyList())).willReturn(List.of(1L));
 
         TeamSidebarResponse result = teamService.createTeam("uid-1", buildCreateRequest("새팀", null));
 
@@ -146,9 +154,11 @@ class TeamServiceTest {
         assertThat(result.getMyRole()).isEqualTo("LEADER");
         assertThat(result.getChannels()).hasSize(1);
         assertThat(result.getChannels().get(0).getRoomName()).isEqualTo("general");
+        assertThat(result.getChannels().get(0).isJoined()).isTrue();
         verify(teamRepository).save(any(Team.class));
         verify(teamMemberRepository).save(any(TeamMember.class));
         verify(chatRoomRepository).save(any(ChatRoom.class));
+        verify(roomMemberRepository).save(any(RoomMember.class));
     }
 
     @Test
@@ -443,6 +453,123 @@ class TeamServiceTest {
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.TEAM_ACCESS_DENIED));
+    }
+
+    // ─── leaveTeam ───────────────────────────────────────────────────────────
+
+    @Test
+    void 팀_나가기_MEMBER_성공() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "멤버");
+        TeamMember member = buildTeamMember(team, user, "MEMBER");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(member));
+        given(teamMemberRepository.save(any(TeamMember.class))).willReturn(member);
+
+        teamService.leaveTeam("uid-1", 1L);
+
+        assertThat(member.getExitAt()).isNotNull();
+        verify(teamMemberRepository).save(member);
+    }
+
+    @Test
+    void 팀_나가기_MANAGER_성공() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "매니저");
+        TeamMember manager = buildTeamMember(team, user, "MANAGER");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(manager));
+        given(teamMemberRepository.save(any(TeamMember.class))).willReturn(manager);
+
+        teamService.leaveTeam("uid-1", 1L);
+
+        assertThat(manager.getExitAt()).isNotNull();
+    }
+
+    @Test
+    void 팀_나가기_LEADER_예외() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "리더");
+        TeamMember leader = buildTeamMember(team, user, "LEADER");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(leader));
+
+        assertThatThrownBy(() -> teamService.leaveTeam("uid-1", 1L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.LEADER_CANNOT_LEAVE));
+    }
+
+    @Test
+    void 팀_나가기_팀없음_예외() {
+        given(teamRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamService.leaveTeam("uid-1", 99L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.TEAM_NOT_FOUND));
+    }
+
+    // ─── joinChannel ─────────────────────────────────────────────────────────
+
+    @Test
+    void 채널_참여_성공() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "멤버");
+        TeamMember member = buildTeamMember(team, user, "MEMBER");
+        ChatRoom chatRoom = buildChatRoom(10L, team, "general");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(member));
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(chatRoom, user)).willReturn(false);
+        given(roomMemberRepository.save(any(RoomMember.class))).willReturn(new RoomMember());
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(member));
+        given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of(chatRoom));
+        given(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(anyString(), anyList())).willReturn(List.of(10L));
+
+        TeamSidebarResponse result = teamService.joinChannel("uid-1", 1L, 10L);
+
+        verify(roomMemberRepository).save(any(RoomMember.class));
+        assertThat(result.getChannels().get(0).isJoined()).isTrue();
+    }
+
+    @Test
+    void 채널_참여_이미_멤버이면_저장_건너뜀() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "멤버");
+        TeamMember member = buildTeamMember(team, user, "MEMBER");
+        ChatRoom chatRoom = buildChatRoom(10L, team, "general");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(member));
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(chatRoom, user)).willReturn(true);
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(member));
+        given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of(chatRoom));
+        given(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(anyString(), anyList())).willReturn(List.of(10L));
+
+        teamService.joinChannel("uid-1", 1L, 10L);
+
+        verify(roomMemberRepository, times(0)).save(any(RoomMember.class));
+    }
+
+    @Test
+    void 채널_참여_팀멤버_아님_예외() {
+        Team team = buildTeam(1L, "팀");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamService.joinChannel("uid-1", 1L, 10L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOT_TEAM_MEMBER));
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────

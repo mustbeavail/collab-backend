@@ -94,7 +94,7 @@ class UserServiceTest {
     }
 
     @Test
-    void 프로필_수정_소개_null_성공() {
+    void 프로필_수정_소개_null이면_기존값_유지() {
         User user = buildUser("uid-1", "test@test.com", "기존닉네임", "기존소개", null);
         given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
         given(userRepository.save(user)).willReturn(user);
@@ -103,7 +103,19 @@ class UserServiceTest {
         UserProfileResponse result = userService.updateMyProfile("uid-1", request);
 
         assertThat(result.getNickname()).isEqualTo("새닉네임");
-        assertThat(result.getAbout()).isNull();
+        assertThat(result.getAbout()).isEqualTo("기존소개");
+    }
+
+    @Test
+    void 프로필_수정_소개_빈문자열_삭제_성공() {
+        User user = buildUser("uid-1", "test@test.com", "기존닉네임", "기존소개", null);
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(userRepository.save(user)).willReturn(user);
+
+        UpdateProfileRequest request = buildRequest("새닉네임", "");
+        UserProfileResponse result = userService.updateMyProfile("uid-1", request);
+
+        assertThat(result.getAbout()).isEmpty();
     }
 
     @Test
@@ -189,6 +201,18 @@ class UserServiceTest {
 
         assertThat(user.getWithdrwalAt()).isNotNull();
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void 회원_탈퇴_후_about_유지() {
+        User user = buildUser("uid-1", "test@test.com", "테스터", "내 소개글", null);
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(userRepository.save(user)).willReturn(user);
+
+        userService.withdraw("uid-1");
+
+        assertThat(user.getWithdrwalAt()).isNotNull();
+        assertThat(user.getAbout()).isEqualTo("내 소개글");
     }
 
     @Test

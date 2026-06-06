@@ -42,4 +42,16 @@ public class AuthController {
         authService.logout(request.getRefreshToken());
         return ResponseEntity.ok(ApiResponse.ok("로그아웃되었습니다.", null));
     }
+
+    @GetMapping("/check-email")
+    public ResponseEntity<ApiResponse<Void>> checkEmail(@RequestParam String email) {
+        authService.checkEmail(email);
+        return ResponseEntity.ok(ApiResponse.ok("사용 가능한 이메일입니다.", null));
+    }
+
+    @GetMapping("/check-nickname")
+    public ResponseEntity<ApiResponse<Void>> checkNickname(@RequestParam String nickname) {
+        authService.checkNickname(nickname);
+        return ResponseEntity.ok(ApiResponse.ok("사용 가능한 닉네임입니다.", null));
+    }
 }

@@ -19,9 +19,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -205,6 +207,50 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("로그아웃되었습니다."));
+    }
+
+    // ─── GET /api/auth/check-email ────────────────────────────────────────
+
+    @Test
+    void 이메일_중복체크_사용가능_200() throws Exception {
+        willDoNothing().given(authService).checkEmail(anyString());
+
+        mockMvc.perform(get("/api/auth/check-email").param("email", "new@example.com"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("사용 가능한 이메일입니다."));
+    }
+
+    @Test
+    void 이메일_중복체크_중복_409() throws Exception {
+        willThrow(new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS))
+                .given(authService).checkEmail(anyString());
+
+        mockMvc.perform(get("/api/auth/check-email").param("email", "dup@example.com"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ─── GET /api/auth/check-nickname ─────────────────────────────────────
+
+    @Test
+    void 닉네임_중복체크_사용가능_200() throws Exception {
+        willDoNothing().given(authService).checkNickname(anyString());
+
+        mockMvc.perform(get("/api/auth/check-nickname").param("nickname", "새닉네임"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("사용 가능한 닉네임입니다."));
+    }
+
+    @Test
+    void 닉네임_중복체크_중복_409() throws Exception {
+        willThrow(new CustomException(ErrorCode.NICKNAME_ALREADY_EXISTS))
+                .given(authService).checkNickname(anyString());
+
+        mockMvc.perform(get("/api/auth/check-nickname").param("nickname", "중복닉네임"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false));
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────
