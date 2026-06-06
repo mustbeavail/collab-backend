@@ -10,12 +10,15 @@ import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.FriendRepository;
 import com.groupware.repository.UserRepository;
+import com.groupware.websocket.WebSocketEventListener;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +27,7 @@ public class FriendService {
     private final FriendRepository friendRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final WebSocketEventListener wsEventListener;
 
     public List<UserSearchResponse> searchUsers(String q, String myUserId) {
         return userRepository.searchByNickOrId(q).stream()
@@ -104,6 +108,14 @@ public class FriendService {
         return friendRepository.findByFriendAndStatus(me, "PENDING").stream()
                 .map(f -> FriendResponse.of(f, me))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Boolean> getOnlineStatuses(String myUserId) {
+        List<FriendResponse> friends = getFriends(myUserId);
+        Map<String, Boolean> result = new HashMap<>();
+        friends.forEach(f -> result.put(f.getUserId(), wsEventListener.isOnline(f.getUserId())));
+        return result;
     }
 
     private User getUser(String userId) {

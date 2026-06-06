@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -46,13 +47,8 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public MessagePageResponse getMessages(String userId, Long roomIdx, Long before, int size) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
         checkAccess(room, user);
 
         // size+1 개 조회 → hasMore 판단 후 초과분 제거
@@ -78,13 +74,8 @@ public class ChatService {
 
     @Transactional
     public void sendMessage(String userId, Long roomIdx, SendMessageRequest request) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
         checkAccess(room, user);
 
         Message msg = new Message();
@@ -110,7 +101,7 @@ public class ChatService {
         messagingTemplate.convertAndSend("/topic/room/" + roomIdx, payload);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ChatRoomResponse getOrCreateDmRoom(String userId, String targetUserId) {
         User me = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
@@ -124,13 +115,8 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<RoomMemberResponse> getRoomMembers(String userId, Long roomIdx) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
         checkAccess(room, user);
 
         if (room.getTeam() != null) {
@@ -153,23 +139,17 @@ public class ChatService {
 
     @Transactional
     public void inviteToRoom(String userId, Long roomIdx, InviteRequest request) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
         if (room.getTeam() != null) {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
 
-        User inviter = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-
+        User inviter = getActiveUser(userId);
         if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, inviter)) {
             throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
         }
 
-        User target = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        User target = getActiveUser(request.getUserId());
 
         if (roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, target)) {
             return;
@@ -185,16 +165,12 @@ public class ChatService {
 
     @Transactional
     public void leaveRoom(String userId, Long roomIdx) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
         if (room.getTeam() != null) {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        User user = getActiveUser(userId);
 
         RoomMember member = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_ROOM_MEMBER));
@@ -205,16 +181,12 @@ public class ChatService {
 
     @Transactional
     public void kickMember(String userId, Long roomIdx, String targetUserId) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
+        ChatRoom room = getActiveRoom(roomIdx);
         if (room.getTeam() != null) {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
 
-        User kicker = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        User kicker = getActiveUser(userId);
 
         RoomMember kickerMember = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, kicker)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_ROOM_MEMBER));
@@ -227,8 +199,7 @@ public class ChatService {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
 
-        User target = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        User target = getActiveUser(targetUserId);
 
         RoomMember targetMember = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, target)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_ROOM_MEMBER));
@@ -239,25 +210,19 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public ChatRoomDetailResponse getRoomInfo(String userId, Long roomIdx) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
         checkAccess(room, user);
         return ChatRoomDetailResponse.from(room);
     }
 
     @Transactional
     public ChatRoomDetailResponse updateRoomInfo(String userId, Long roomIdx, UpdateRoomInfoRequest request) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+        ChatRoom room = getActiveRoom(roomIdx);
         if (room.getTeam() != null) {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        User user = getActiveUser(userId);
         RoomMember member = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_ROOM_MEMBER));
         if (!"OWNER".equals(member.getRole())) {
@@ -267,6 +232,17 @@ public class ChatService {
         room.setDescription(request.getDescription());
         chatRoomRepository.save(room);
         return ChatRoomDetailResponse.from(room);
+    }
+
+    private ChatRoom getActiveRoom(Long roomIdx) {
+        return chatRoomRepository.findById(roomIdx)
+                .filter(r -> r.getDelDate() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+    }
+
+    private User getActiveUser(String userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
     }
 
     private void checkAccess(ChatRoom room, User user) {

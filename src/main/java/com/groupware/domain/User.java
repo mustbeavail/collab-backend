@@ -27,8 +27,8 @@ public class User {
     @Column(name = "join_at")
     private LocalDateTime joinAt;
 
-    @Column(name = "withdrwal_at")
-    private LocalDateTime withdrwalAt;
+    @Column(name = "withdrawal_at")
+    private LocalDateTime withdrawalAt;
 
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;

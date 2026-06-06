@@ -4,7 +4,6 @@ import com.groupware.domain.User;
 import com.groupware.dto.auth.AuthResponse;
 import com.groupware.dto.auth.LoginRequest;
 import com.groupware.dto.auth.SignupRequest;
-import com.groupware.dto.auth.TokenRefreshRequest;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.UserRepository;
@@ -53,6 +52,7 @@ class AuthServiceTest {
     @Mock private ValueOperations<String, String> valueOps;
     @Mock private EntityManager entityManager;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private EmailVerificationService emailVerificationService;
 
     @BeforeEach
     void setUp() {
@@ -66,6 +66,7 @@ class AuthServiceTest {
     @Test
     void 회원가입_성공() {
         SignupRequest request = signupRequest("test@example.com", "password123", "테스터", "안녕하세요");
+        org.mockito.Mockito.doNothing().when(emailVerificationService).consumeVerified("test@example.com");
         given(userRepository.findById("test@example.com")).willReturn(Optional.empty());
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
@@ -82,6 +83,7 @@ class AuthServiceTest {
     @Test
     void 회원가입_about_저장() {
         SignupRequest request = signupRequest("test@example.com", "password123", "테스터", "자기소개입니다");
+        org.mockito.Mockito.doNothing().when(emailVerificationService).consumeVerified("test@example.com");
         given(userRepository.findById("test@example.com")).willReturn(Optional.empty());
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
@@ -95,6 +97,7 @@ class AuthServiceTest {
     @Test
     void 회원가입_이메일_중복_예외() {
         SignupRequest request = signupRequest("dup@example.com", "password123", "중복유저", null);
+        org.mockito.Mockito.doNothing().when(emailVerificationService).consumeVerified("dup@example.com");
         User activeUser = buildUser("dup@example.com", "encoded-pw", "중복유저", null);
         given(userRepository.findById("dup@example.com")).willReturn(Optional.of(activeUser));
 
@@ -108,6 +111,7 @@ class AuthServiceTest {
     void 탈퇴한_회원_재가입_성공() {
         User withdrawn = buildUser("left@example.com", "old-pw", "이전닉네임", LocalDateTime.now().minusDays(7));
         SignupRequest request = signupRequest("left@example.com", "newpassword123", "새닉네임", null);
+        org.mockito.Mockito.doNothing().when(emailVerificationService).consumeVerified("left@example.com");
 
         given(userRepository.findById("left@example.com")).willReturn(Optional.of(withdrawn));
         given(userRepository.existsById("left@example.com_1")).willReturn(false);
@@ -131,13 +135,13 @@ class AuthServiceTest {
 
     @Test
     void 이메일_중복체크_사용가능() {
-        given(userRepository.existsByUserIdAndWithdrwalAtIsNull("new@example.com")).willReturn(false);
+        given(userRepository.existsByUserIdAndWithdrawalAtIsNull("new@example.com")).willReturn(false);
         authService.checkEmail("new@example.com"); // 예외 없이 통과
     }
 
     @Test
     void 이메일_중복체크_중복_예외() {
-        given(userRepository.existsByUserIdAndWithdrwalAtIsNull("dup@example.com")).willReturn(true);
+        given(userRepository.existsByUserIdAndWithdrawalAtIsNull("dup@example.com")).willReturn(true);
 
         assertThatThrownBy(() -> authService.checkEmail("dup@example.com"))
                 .isInstanceOf(CustomException.class)
@@ -147,7 +151,7 @@ class AuthServiceTest {
 
     @Test
     void 이메일_중복체크_탈퇴회원은_사용가능() {
-        given(userRepository.existsByUserIdAndWithdrwalAtIsNull("withdrawn@example.com")).willReturn(false);
+        given(userRepository.existsByUserIdAndWithdrawalAtIsNull("withdrawn@example.com")).willReturn(false);
         authService.checkEmail("withdrawn@example.com"); // 예외 없이 통과
     }
 
@@ -155,15 +159,15 @@ class AuthServiceTest {
 
     @Test
     void 닉네임_중복체크_사용가능() {
-        given(userRepository.existsByNickAndWithdrwalAtIsNull("새닉네임")).willReturn(false);
-        authService.checkNickname("새닉네임"); // 예외 없이 통과
+        given(userRepository.existsByNickAndWithdrawalAtIsNull("새닉네임")).willReturn(false);
+        authService.checkNickname("새닉네임", null); // 예외 없이 통과
     }
 
     @Test
     void 닉네임_중복체크_중복_예외() {
-        given(userRepository.existsByNickAndWithdrwalAtIsNull("중복닉네임")).willReturn(true);
+        given(userRepository.existsByNickAndWithdrawalAtIsNull("중복닉네임")).willReturn(true);
 
-        assertThatThrownBy(() -> authService.checkNickname("중복닉네임"))
+        assertThatThrownBy(() -> authService.checkNickname("중복닉네임", null))
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS));
@@ -225,13 +229,12 @@ class AuthServiceTest {
 
     @Test
     void 토큰_갱신_성공() {
-        TokenRefreshRequest request = refreshRequest("valid-refresh-token");
         User user = buildUser("test@example.com", "encoded-pw", "테스터", null);
         given(valueOps.get("refresh:valid-refresh-token")).willReturn("test@example.com");
         given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(jwtUtil.generateAccessToken("test@example.com")).willReturn("new-access-token");
 
-        AuthResponse response = authService.refresh(request);
+        AuthResponse response = authService.refresh("valid-refresh-token");
 
         assertThat(response.getAccessToken()).isEqualTo("new-access-token");
         verify(redisTemplate).delete("refresh:valid-refresh-token");
@@ -239,10 +242,9 @@ class AuthServiceTest {
 
     @Test
     void 토큰_갱신_존재하지_않는_토큰_예외() {
-        TokenRefreshRequest request = refreshRequest("invalid-token");
         given(valueOps.get("refresh:invalid-token")).willReturn(null);
 
-        assertThatThrownBy(() -> authService.refresh(request))
+        assertThatThrownBy(() -> authService.refresh("invalid-token"))
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.REFRESH_TOKEN_NOT_FOUND));
@@ -286,7 +288,7 @@ class AuthServiceTest {
     void 로그아웃_시_Redis_키_삭제() {
         given(valueOps.get("refresh:some-refresh-token")).willReturn(null);
 
-        authService.logout("some-refresh-token");
+        authService.logout("some-refresh-token", null);
 
         verify(redisTemplate).delete("refresh:some-refresh-token");
     }
@@ -296,7 +298,7 @@ class AuthServiceTest {
         given(valueOps.get("refresh:my-refresh-token")).willReturn("test@example.com");
         given(valueOps.get("user:test@example.com")).willReturn("my-refresh-token");
 
-        authService.logout("my-refresh-token");
+        authService.logout("my-refresh-token", null);
 
         verify(redisTemplate).delete("refresh:my-refresh-token");
         verify(redisTemplate).delete("user:test@example.com");
@@ -308,7 +310,7 @@ class AuthServiceTest {
         // 역방향 매핑이 이미 새 세션으로 갱신된 상태
         given(valueOps.get("user:test@example.com")).willReturn("new-refresh-token");
 
-        authService.logout("old-refresh-token");
+        authService.logout("old-refresh-token", null);
 
         verify(redisTemplate).delete("refresh:old-refresh-token");
         verify(redisTemplate, never()).delete("user:test@example.com");
@@ -332,18 +334,12 @@ class AuthServiceTest {
         return req;
     }
 
-    private TokenRefreshRequest refreshRequest(String token) {
-        TokenRefreshRequest req = new TokenRefreshRequest();
-        ReflectionTestUtils.setField(req, "refreshToken", token);
-        return req;
-    }
-
     private User buildUser(String userId, String pw, String nick, LocalDateTime withdrawnAt) {
         User user = new User();
         user.setUserId(userId);
         user.setPw(pw);
         user.setNick(nick);
-        user.setWithdrwalAt(withdrawnAt);
+        user.setWithdrawalAt(withdrawnAt);
         return user;
     }
 }

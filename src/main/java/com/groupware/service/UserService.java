@@ -35,7 +35,7 @@ public class UserService {
     public UserProfileResponse getMyProfile(String userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
         return UserProfileResponse.from(user);
@@ -45,7 +45,7 @@ public class UserService {
     public UserProfileResponse updateMyProfile(String userId, UpdateProfileRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
         user.setNick(request.getNickname());
@@ -61,7 +61,7 @@ public class UserService {
     public void changePassword(String userId, ChangePasswordRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPw())) {
@@ -75,35 +75,66 @@ public class UserService {
     public void withdraw(String userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
-        user.setWithdrwalAt(LocalDateTime.now());
+        user.setWithdrawalAt(LocalDateTime.now());
         userRepository.save(user);
     }
+
+    private static final long MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
+    private static final java.util.Set<String> ALLOWED_EXTENSIONS = java.util.Set.of("png", "jpg", "jpeg", "webp");
+    private static final java.util.Map<String, byte[]> MAGIC_BYTES = java.util.Map.of(
+            "png",  new byte[]{(byte)0x89, 0x50, 0x4E, 0x47},
+            "jpg",  new byte[]{(byte)0xFF, (byte)0xD8, (byte)0xFF},
+            "jpeg", new byte[]{(byte)0xFF, (byte)0xD8, (byte)0xFF},
+            "webp", new byte[]{0x52, 0x49, 0x46, 0x46}
+    );
 
     @Transactional
     public String uploadAvatar(String userId, MultipartFile file) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
 
-        String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
+        if (file.getSize() > MAX_AVATAR_SIZE) {
             throw new CustomException(ErrorCode.INVALID_FILE_TYPE);
         }
 
         String ext = extractExtension(file.getOriginalFilename());
-        String filename = UUID.randomUUID() + (ext.isEmpty() ? "" : "." + ext);
+        if (!ALLOWED_EXTENSIONS.contains(ext)) {
+            throw new CustomException(ErrorCode.INVALID_FILE_TYPE);
+        }
 
+        try {
+            byte[] header = file.getInputStream().readNBytes(4);
+            byte[] magic = MAGIC_BYTES.get(ext);
+            if (magic != null) {
+                for (int i = 0; i < magic.length; i++) {
+                    if (header[i] != magic[i]) throw new CustomException(ErrorCode.INVALID_FILE_TYPE);
+                }
+            }
+        } catch (IOException e) {
+            throw new CustomException(ErrorCode.INVALID_FILE_TYPE);
+        }
+
+        String filename = UUID.randomUUID() + "." + ext;
         Path avatarDir = Paths.get(uploadDir, "avatars");
         try {
             Files.createDirectories(avatarDir);
             Files.copy(file.getInputStream(), avatarDir.resolve(filename));
         } catch (IOException e) {
             throw new CustomException(ErrorCode.FILE_UPLOAD_FAILED);
+        }
+
+        // 기존 아바타 파일 삭제
+        if (user.getAvatarUrl() != null && user.getAvatarUrl().startsWith("/avatars/")) {
+            String oldFilename = user.getAvatarUrl().substring("/avatars/".length());
+            try {
+                Files.deleteIfExists(Paths.get(uploadDir, "avatars", oldFilename));
+            } catch (IOException ignored) { }
         }
 
         String avatarUrl = "/avatars/" + filename;
@@ -116,7 +147,7 @@ public class UserService {
     public UserProfileResponse getUserPublicProfile(String targetUserId) {
         User user = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.USER_NOT_FOUND);
         }
         return UserProfileResponse.from(user);

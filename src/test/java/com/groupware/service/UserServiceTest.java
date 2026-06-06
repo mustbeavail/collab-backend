@@ -199,7 +199,7 @@ class UserServiceTest {
 
         userService.withdraw("uid-1");
 
-        assertThat(user.getWithdrwalAt()).isNotNull();
+        assertThat(user.getWithdrawalAt()).isNotNull();
         verify(userRepository).save(user);
     }
 
@@ -211,7 +211,7 @@ class UserServiceTest {
 
         userService.withdraw("uid-1");
 
-        assertThat(user.getWithdrwalAt()).isNotNull();
+        assertThat(user.getWithdrawalAt()).isNotNull();
         assertThat(user.getAbout()).isEqualTo("내 소개글");
     }
 
@@ -248,7 +248,8 @@ class UserServiceTest {
         given(userRepository.save(user)).willReturn(user);
         ReflectionTestUtils.setField(userService, "uploadDir", tempDir.toString());
 
-        MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", "img".getBytes());
+        byte[] jpegBytes = new byte[]{(byte)0xFF, (byte)0xD8, (byte)0xFF, (byte)0xE0, 0x00, 0x10};
+        MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", jpegBytes);
         String avatarUrl = userService.uploadAvatar("uid-1", file);
 
         assertThat(avatarUrl).startsWith("/avatars/").endsWith(".jpg");
@@ -330,13 +331,13 @@ class UserServiceTest {
         return req;
     }
 
-    private User buildUser(String id, String email, String nick, String about, LocalDateTime withdrwalAt) {
+    private User buildUser(String id, String email, String nick, String about, LocalDateTime withdrawalAt) {
         User user = new User();
         user.setUserId(id);
         user.setNick(nick);
         user.setAbout(about);
         user.setJoinAt(LocalDateTime.of(2026, 1, 1, 0, 0));
-        user.setWithdrwalAt(withdrwalAt);
+        user.setWithdrawalAt(withdrawalAt);
         return user;
     }
 }

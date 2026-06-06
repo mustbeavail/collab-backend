@@ -33,13 +33,16 @@ public enum ErrorCode {
     CANNOT_INVITE_SELF(HttpStatus.BAD_REQUEST, "자기 자신을 초대할 수 없습니다."),
     CANNOT_KICK_HIGHER_ROLE(HttpStatus.FORBIDDEN, "자신보다 높거나 같은 역할의 멤버를 추방할 수 없습니다."),
     LEADER_CANNOT_LEAVE(HttpStatus.FORBIDDEN, "팀장은 팀을 나갈 수 없습니다. 팀을 삭제하거나 역할을 위임하세요."),
+    LEADER_SELF_DEMOTION(HttpStatus.BAD_REQUEST, "팀장은 자신의 역할을 직접 변경할 수 없습니다. 위임 후 강등하세요."),
 
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
     NOT_ROOM_MEMBER(HttpStatus.FORBIDDEN, "채팅방 멤버가 아닙니다."),
 
     EMAIL_SEND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "이메일 발송에 실패했습니다."),
+    EMAIL_SEND_COOLDOWN(HttpStatus.TOO_MANY_REQUESTS, "인증 메일은 1분에 한 번만 발송할 수 있습니다."),
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증코드가 만료되었습니다."),
     EMAIL_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증코드가 올바르지 않습니다."),
+    EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증이 완료되지 않았습니다."),
 
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

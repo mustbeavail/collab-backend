@@ -4,7 +4,6 @@ import com.groupware.domain.User;
 import com.groupware.dto.auth.AuthResponse;
 import com.groupware.dto.auth.LoginRequest;
 import com.groupware.dto.auth.SignupRequest;
-import com.groupware.dto.auth.TokenRefreshRequest;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.UserRepository;
@@ -34,6 +33,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final EmailVerificationService emailVerificationService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -46,10 +46,12 @@ public class AuthService {
 
     @Transactional
     public AuthResponse signup(SignupRequest request) {
+        emailVerificationService.consumeVerified(request.getEmail());
+
         Optional<User> existingOpt = userRepository.findById(request.getEmail());
         if (existingOpt.isPresent()) {
             User existing = existingOpt.get();
-            if (existing.getWithdrwalAt() == null) {
+            if (existing.getWithdrawalAt() == null) {
                 throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
             }
             // 탈퇴 회원 재가입: 기존 행의 user_id를 _1, _2, ... 로 변경
@@ -73,7 +75,7 @@ public class AuthService {
         User user = userRepository.findById(request.getEmail())
                 .orElseThrow(() -> new CustomException(ErrorCode.EMAIL_NOT_REGISTERED));
 
-        if (user.getWithdrwalAt() != null) {
+        if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
 
@@ -84,8 +86,8 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    public AuthResponse refresh(TokenRefreshRequest request) {
-        String key = REFRESH_KEY_PREFIX + request.getRefreshToken();
+    public AuthResponse refresh(String refreshToken) {
+        String key = REFRESH_KEY_PREFIX + refreshToken;
         String userId = redisTemplate.opsForValue().get(key);
 
         if (userId == null) {
@@ -99,41 +101,45 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    public void logout(String refreshToken) {
-        String userId = redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + refreshToken);
-        redisTemplate.delete(REFRESH_KEY_PREFIX + refreshToken);
-        if (userId != null) {
-            String userSessionKey = USER_SESSION_KEY_PREFIX + userId;
-            String storedToken = redisTemplate.opsForValue().get(userSessionKey);
-            if (refreshToken.equals(storedToken)) {
-                redisTemplate.delete(userSessionKey);
+    public void logout(String refreshToken, String accessToken) {
+        if (refreshToken != null) {
+            String userId = redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + refreshToken);
+            redisTemplate.delete(REFRESH_KEY_PREFIX + refreshToken);
+            if (userId != null) {
+                String userSessionKey = USER_SESSION_KEY_PREFIX + userId;
+                String storedToken = redisTemplate.opsForValue().get(userSessionKey);
+                if (refreshToken.equals(storedToken)) {
+                    redisTemplate.delete(userSessionKey);
+                }
             }
+        }
+        if (accessToken != null) {
+            jwtUtil.blacklist(accessToken);
         }
     }
 
     public void checkEmail(String email) {
-        if (userRepository.existsByUserIdAndWithdrwalAtIsNull(email)) {
+        if (userRepository.existsByUserIdAndWithdrawalAtIsNull(email)) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
     }
 
-    public void checkNickname(String nickname) {
-        if (userRepository.existsByNickAndWithdrwalAtIsNull(nickname)) {
+    public void checkNickname(String nickname, String excludeUserId) {
+        boolean taken = (excludeUserId != null)
+                ? userRepository.existsNickByOtherUser(nickname, excludeUserId)
+                : userRepository.existsByNickAndWithdrawalAtIsNull(nickname);
+        if (taken) {
             throw new CustomException(ErrorCode.NICKNAME_ALREADY_EXISTS);
         }
     }
 
     private void renameWithdrawnUser(String email) {
         String newEmail = findNextRenamedEmail(email);
-        try {
-            entityManager.createNativeQuery("SET FOREIGN_KEY_CHECKS=0").executeUpdate();
-            entityManager.createNativeQuery("UPDATE users SET user_id = :newId WHERE user_id = :oldId")
-                    .setParameter("newId", newEmail)
-                    .setParameter("oldId", email)
-                    .executeUpdate();
-        } finally {
-            entityManager.createNativeQuery("SET FOREIGN_KEY_CHECKS=1").executeUpdate();
-        }
+        // FK에 ON UPDATE CASCADE가 설정돼 있어 자식 테이블이 자동 반영됨
+        entityManager.createNativeQuery("UPDATE users SET user_id = :newId WHERE user_id = :oldId")
+                .setParameter("newId", newEmail)
+                .setParameter("oldId", email)
+                .executeUpdate();
     }
 
     private String findNextRenamedEmail(String email) {

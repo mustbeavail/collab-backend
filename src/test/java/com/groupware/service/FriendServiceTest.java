@@ -4,13 +4,13 @@ import com.groupware.domain.Friend;
 import com.groupware.domain.User;
 import com.groupware.dto.friend.FriendRequestDto;
 import com.groupware.dto.friend.FriendResponse;
+import com.groupware.dto.notification.NotificationPayload;
 import com.groupware.dto.user.UserSearchResponse;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
-import com.groupware.dto.notification.NotificationPayload;
 import com.groupware.repository.FriendRepository;
 import com.groupware.repository.UserRepository;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import com.groupware.websocket.WebSocketEventListener;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,9 +18,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +40,7 @@ class FriendServiceTest {
     @Mock private FriendRepository friendRepository;
     @Mock private UserRepository userRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private WebSocketEventListener wsEventListener;
 
     // ─── searchUsers ──────────────────────────────────────────────────────
 
@@ -225,6 +228,27 @@ class FriendServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getUserId()).isEqualTo("uid-1");
         assertThat(result.get(0).getStatus()).isEqualTo("PENDING");
+    }
+
+    // ─── getOnlineStatuses ────────────────────────────────────────────────
+
+    @Test
+    void 친구_온라인_상태_조회() {
+        User me = buildUser("uid-1", "me@test.com", "나");
+        User onlineFriend = buildUser("uid-2", "a@b.com", "온라인친구");
+        User offlineFriend = buildUser("uid-3", "b@b.com", "오프라인친구");
+        Friend f1 = buildFriend(1L, me, onlineFriend, "ACCEPTED");
+        Friend f2 = buildFriend(2L, me, offlineFriend, "ACCEPTED");
+
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(friendRepository.findAcceptedFriends(me)).willReturn(List.of(f1, f2));
+        given(wsEventListener.isOnline("uid-2")).willReturn(true);
+        given(wsEventListener.isOnline("uid-3")).willReturn(false);
+
+        Map<String, Boolean> result = friendService.getOnlineStatuses("uid-1");
+
+        assertThat(result).containsEntry("uid-2", true);
+        assertThat(result).containsEntry("uid-3", false);
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────

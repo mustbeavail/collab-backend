@@ -237,8 +237,18 @@ public class TeamService {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
 
+        if (userId.equals(targetUserId)) {
+            throw new CustomException(ErrorCode.LEADER_SELF_DEMOTION);
+        }
+
         TeamMember target = teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+
+        if ("LEADER".equals(request.getRole())) {
+            // 리더 위임: 기존 리더를 MANAGER로 강등 후 새 리더 지정
+            myMember.setRole("MANAGER");
+            teamMemberRepository.save(myMember);
+        }
 
         target.setRole(request.getRole());
         teamMemberRepository.save(target);

@@ -22,6 +22,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다: " + userId));
 
+        if (user.getWithdrawalAt() != null) {
+            throw new UsernameNotFoundException("탈퇴한 사용자입니다: " + userId);
+        }
+
         return new org.springframework.security.core.userdetails.User(
                 user.getUserId(),
                 user.getPw(),

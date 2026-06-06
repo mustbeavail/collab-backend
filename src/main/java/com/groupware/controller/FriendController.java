@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/friends")
@@ -25,6 +26,12 @@ public class FriendController {
     public ResponseEntity<ApiResponse<List<FriendResponse>>> getFriends(
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.ok(ApiResponse.ok(friendService.getFriends(userDetails.getUsername())));
+    }
+
+    @GetMapping("/online-status")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> getOnlineStatuses(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.ok(friendService.getOnlineStatuses(userDetails.getUsername())));
     }
 
     @GetMapping("/requests")

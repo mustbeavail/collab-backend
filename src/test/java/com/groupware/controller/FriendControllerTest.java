@@ -198,6 +198,26 @@ class FriendControllerTest {
                 .andExpect(jsonPath("$.success").value(false));
     }
 
+    // ─── GET /api/friends/online-status ──────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 친구_온라인_상태_조회_200() throws Exception {
+        given(friendService.getOnlineStatuses("uid-1")).willReturn(Map.of("uid-2", true, "uid-3", false));
+
+        mockMvc.perform(get("/api/friends/online-status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.uid-2").value(true))
+                .andExpect(jsonPath("$.data.uid-3").value(false));
+    }
+
+    @Test
+    void 친구_온라인_상태_미인증_401() throws Exception {
+        mockMvc.perform(get("/api/friends/online-status"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────
 
     private String json(Object obj) throws Exception {

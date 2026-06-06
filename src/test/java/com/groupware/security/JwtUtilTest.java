@@ -2,6 +2,9 @@ package com.groupware.security;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,7 +17,10 @@ class JwtUtilTest {
 
     @BeforeEach
     void setUp() {
-        jwtUtil = new JwtUtil(SECRET, EXPIRY);
+        StringRedisTemplate mockRedis = Mockito.mock(StringRedisTemplate.class);
+        jwtUtil = new JwtUtil(mockRedis);
+        jwtUtil.setSecret(SECRET);
+        jwtUtil.setAccessTokenExpiry(EXPIRY);
     }
 
     @Test
@@ -43,7 +49,10 @@ class JwtUtilTest {
 
     @Test
     void 만료된_토큰_검증_실패() {
-        JwtUtil expiredJwtUtil = new JwtUtil(SECRET, -1L);
+        StringRedisTemplate mockRedis = Mockito.mock(StringRedisTemplate.class);
+        JwtUtil expiredJwtUtil = new JwtUtil(mockRedis);
+        expiredJwtUtil.setSecret(SECRET);
+        expiredJwtUtil.setAccessTokenExpiry(-1L);
         String token = expiredJwtUtil.generateAccessToken("user-123");
         assertThat(jwtUtil.validate(token)).isFalse();
     }

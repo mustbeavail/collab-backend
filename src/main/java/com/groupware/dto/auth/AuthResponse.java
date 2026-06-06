@@ -11,4 +11,13 @@ public class AuthResponse {
     private String userId;
     private String nickname;
     private String email;
+
+    public AuthResponse withoutRefreshToken() {
+        return AuthResponse.builder()
+                .accessToken(this.accessToken)
+                .userId(this.userId)
+                .nickname(this.nickname)
+                .email(this.email)
+                .build();
+    }
 }
