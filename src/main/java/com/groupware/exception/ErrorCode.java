@@ -19,6 +19,9 @@ public enum ErrorCode {
     WRONG_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST, "현재 비밀번호가 올바르지 않습니다."),
     INVALID_FILE_TYPE(HttpStatus.BAD_REQUEST, "이미지 파일만 업로드 가능합니다."),
     FILE_UPLOAD_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "파일 업로드에 실패했습니다."),
+    FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다."),
+    FILE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "파일에 대한 권한이 없습니다."),
+    FILE_SIZE_EXCEEDED(HttpStatus.BAD_REQUEST, "파일 크기는 50MB를 초과할 수 없습니다."),
 
     CANNOT_ADD_SELF(HttpStatus.BAD_REQUEST, "자기 자신에게 친구 요청을 보낼 수 없습니다."),
     FRIEND_REQUEST_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 친구이거나 요청이 존재합니다."),
@@ -43,6 +46,12 @@ public enum ErrorCode {
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증코드가 만료되었습니다."),
     EMAIL_CODE_INVALID(HttpStatus.BAD_REQUEST, "인증코드가 올바르지 않습니다."),
     EMAIL_NOT_VERIFIED(HttpStatus.BAD_REQUEST, "이메일 인증이 완료되지 않았습니다."),
+
+    SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
+    MEETING_NOTE_NOT_FOUND(HttpStatus.NOT_FOUND, "회의록을 찾을 수 없습니다."),
+    MEETING_NOTE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "회의록에 대한 권한이 없습니다."),
+    NO_MESSAGES_IN_RANGE(HttpStatus.BAD_REQUEST, "선택한 시간 범위에 메시지가 없습니다."),
+    AI_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AI 회의록 생성에 실패했습니다."),
 
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

@@ -35,4 +35,9 @@ public class MeetingNote {
 
     @Column(name = "del_at")
     private LocalDateTime delAt;
+
+    @PrePersist
+    void prePersist() {
+        this.createdAt = LocalDateTime.now();
+    }
 }

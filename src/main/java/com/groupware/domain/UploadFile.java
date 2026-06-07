@@ -4,6 +4,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "files")
@@ -37,4 +40,11 @@ public class UploadFile {
 
     @Column(name = "file_extension", length = 10)
     private String fileExtension;
+
+    @Column(name = "file_size")
+    private Long fileSize;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

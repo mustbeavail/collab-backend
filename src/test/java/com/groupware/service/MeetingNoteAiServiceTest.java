@@ -1,0 +1,163 @@
+package com.groupware.service;
+
+import com.groupware.domain.ChatRoom;
+import com.groupware.domain.MeetingNote;
+import com.groupware.domain.Message;
+import com.groupware.domain.User;
+import com.groupware.dto.minutes.AiGenerateRequest;
+import com.groupware.dto.minutes.MeetingNoteResponse;
+import com.groupware.exception.CustomException;
+import com.groupware.exception.ErrorCode;
+import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.MeetingNoteRepository;
+import com.groupware.repository.MessageRepository;
+import com.groupware.repository.RoomMemberRepository;
+import com.groupware.repository.TeamMemberRepository;
+import com.groupware.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+
+@ExtendWith(MockitoExtension.class)
+class MeetingNoteAiServiceTest {
+
+    @InjectMocks private MeetingNoteService meetingNoteService;
+    @Mock private MeetingNoteRepository meetingNoteRepository;
+    @Mock private ChatRoomRepository chatRoomRepository;
+    @Mock private RoomMemberRepository roomMemberRepository;
+    @Mock private TeamMemberRepository teamMemberRepository;
+    @Mock private UserRepository userRepository;
+    @Mock private MessageRepository messageRepository;
+    @Mock private GeminiService geminiService;
+
+    private User user;
+    private ChatRoom room;
+
+    @BeforeEach
+    void setUp() {
+        user = new User();
+        ReflectionTestUtils.setField(user, "userId", "a@test.com");
+        ReflectionTestUtils.setField(user, "nick", "Alice");
+
+        room = new ChatRoom();
+        ReflectionTestUtils.setField(room, "roomIdx", 1L);
+        ReflectionTestUtils.setField(room, "roomName", "general");
+    }
+
+    private Message makeMessage(String nick, String content, LocalDateTime sentAt) {
+        User msgUser = new User();
+        ReflectionTestUtils.setField(msgUser, "userId", nick + "@test.com");
+        ReflectionTestUtils.setField(msgUser, "nick", nick);
+
+        Message m = new Message();
+        ReflectionTestUtils.setField(m, "user", msgUser);
+        ReflectionTestUtils.setField(m, "content", content);
+        ReflectionTestUtils.setField(m, "sentAt", sentAt);
+        ReflectionTestUtils.setField(m, "msgType", "TEXT");
+        return m;
+    }
+
+    private AiGenerateRequest makeRequest(LocalDateTime start, LocalDateTime end) {
+        AiGenerateRequest req = new AiGenerateRequest();
+        ReflectionTestUtils.setField(req, "startTime", start);
+        ReflectionTestUtils.setField(req, "endTime", end);
+        return req;
+    }
+
+    @Test
+    void AI_회의록_생성_성공() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findTextMessagesByRoomAndTimeRange(1L, start, end)).willReturn(List.of(
+                makeMessage("Alice", "안녕하세요", start.plusMinutes(1)),
+                makeMessage("Bob",   "오늘 회의 시작하겠습니다", start.plusMinutes(2))
+        ));
+        given(geminiService.generateContent(anyString())).willReturn("## 참석자\nAlice, Bob\n\n## 결정사항\n없음");
+        given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
+            MeetingNote n = inv.getArgument(0);
+            ReflectionTestUtils.setField(n, "noteIdx", 10L);
+            ReflectionTestUtils.setField(n, "createdAt", LocalDateTime.now());
+            return n;
+        });
+
+        MeetingNoteResponse result = meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end));
+
+        assertThat(result.getNoteIdx()).isEqualTo(10L);
+        assertThat(result.getTitle()).contains("AI 회의록");
+        assertThat(result.getContent()).contains("참석자");
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(geminiService).generateContent(promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).contains("Alice").contains("안녕하세요");
+    }
+
+    @Test
+    void AI_회의록_메시지없음_예외() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findTextMessagesByRoomAndTimeRange(anyLong(), any(), any()))
+                .willReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NO_MESSAGES_IN_RANGE);
+    }
+
+    @Test
+    void AI_회의록_Gemini실패_예외() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findTextMessagesByRoomAndTimeRange(1L, start, end))
+                .willReturn(List.of(makeMessage("Alice", "테스트", start.plusMinutes(1))));
+        given(geminiService.generateContent(anyString()))
+                .willThrow(new CustomException(ErrorCode.AI_GENERATION_FAILED));
+
+        assertThatThrownBy(() -> meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.AI_GENERATION_FAILED);
+    }
+
+    @Test
+    void AI_회의록_멤버아님_예외() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(false);
+
+        assertThatThrownBy(() -> meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end)))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NOT_ROOM_MEMBER);
+    }
+}

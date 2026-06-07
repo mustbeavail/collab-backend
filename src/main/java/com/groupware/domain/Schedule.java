@@ -22,12 +22,18 @@ public class Schedule {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "room_idx", nullable = false)
+    @JoinColumn(name = "room_idx")
     private ChatRoom chatRoom;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "team_idx", nullable = false)
+    @JoinColumn(name = "team_idx")
     private Team team;
+
+    @Column(name = "title", nullable = false, length = 255)
+    private String title;
+
+    @Column(name = "participants", length = 500)
+    private String participants;
 
     @Column(name = "content", length = 500)
     private String content;
@@ -44,9 +50,14 @@ public class Schedule {
     @Column(name = "longt", precision = 10, scale = 8)
     private BigDecimal longt;
 
-    @Column(name = "created_at")
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "del_at")
     private LocalDateTime delAt;
+
+    @PrePersist
+    void prePersist() {
+        this.createdAt = LocalDateTime.now();
+    }
 }

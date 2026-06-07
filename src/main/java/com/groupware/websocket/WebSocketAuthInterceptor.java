@@ -53,14 +53,17 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
             String destination = accessor.getDestination();
-            if (destination != null && destination.startsWith("/topic/room/")) {
+            boolean isRoomTopic = destination != null && destination.startsWith("/topic/room/");
+            boolean isDrawTopic = destination != null && destination.startsWith("/topic/draw/");
+            if (isRoomTopic || isDrawTopic) {
                 Principal principal = accessor.getUser();
                 if (principal == null) {
                     throw new MessagingException("인증되지 않은 구독 요청입니다.");
                 }
                 String userId = principal.getName();
                 try {
-                    Long roomIdx = Long.parseLong(destination.substring("/topic/room/".length()));
+                    String prefix = isRoomTopic ? "/topic/room/" : "/topic/draw/";
+                    Long roomIdx = Long.parseLong(destination.substring(prefix.length()));
                     ChatRoom room = chatRoomRepository.findById(roomIdx)
                             .filter(r -> r.getDelDate() == null)
                             .orElseThrow(() -> new MessagingException("채팅방을 찾을 수 없습니다."));
