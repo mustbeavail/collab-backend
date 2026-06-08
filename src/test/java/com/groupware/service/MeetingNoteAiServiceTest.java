@@ -21,7 +21,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -34,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -145,6 +148,64 @@ class MeetingNoteAiServiceTest {
         assertThatThrownBy(() -> meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end)))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.AI_GENERATION_FAILED);
+    }
+
+    // ── 음성 AI 회의록 ──────────────────────────────────────────────────────
+
+    @Test
+    void 음성_AI_회의록_단일파일_성공() throws Exception {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(geminiService.generateContentFromAudio(any(), anyString())).willReturn("## 참석자\nAlice");
+        given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
+            MeetingNote n = inv.getArgument(0);
+            ReflectionTestUtils.setField(n, "noteIdx", 20L);
+            ReflectionTestUtils.setField(n, "createdAt", LocalDateTime.now());
+            return n;
+        });
+
+        MultipartFile file = new MockMultipartFile("audio", "rec.webm", "audio/webm", new byte[100]);
+        MeetingNoteResponse result = meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of(file));
+
+        assertThat(result.getNoteIdx()).isEqualTo(20L);
+        assertThat(result.getTitle()).contains("음성 AI 회의록");
+        assertThat(result.getContent()).contains("참석자");
+        verify(geminiService).generateContentFromAudio(any(), anyString());
+    }
+
+    @Test
+    void 음성_AI_회의록_다중세그먼트_merge호출() throws Exception {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(geminiService.generateContentFromAudio(any(), anyString())).willReturn("## 참석자\nAlice");
+        given(geminiService.mergeMinutesSections(any())).willReturn("## 참석자\nAlice, Bob\n\n## 결정사항\n없음");
+        given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
+            MeetingNote n = inv.getArgument(0);
+            ReflectionTestUtils.setField(n, "noteIdx", 21L);
+            ReflectionTestUtils.setField(n, "createdAt", LocalDateTime.now());
+            return n;
+        });
+
+        MultipartFile f1 = new MockMultipartFile("audio", "rec-1.webm", "audio/webm", new byte[100]);
+        MultipartFile f2 = new MockMultipartFile("audio", "rec-2.webm", "audio/webm", new byte[100]);
+        MeetingNoteResponse result = meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of(f1, f2));
+
+        assertThat(result.getNoteIdx()).isEqualTo(21L);
+        verify(geminiService, times(2)).generateContentFromAudio(any(), anyString());
+        verify(geminiService).mergeMinutesSections(any());
+    }
+
+    @Test
+    void 음성_AI_회의록_파일없음_예외() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+
+        assertThatThrownBy(() -> meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of()))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NO_AUDIO_FILES);
     }
 
     @Test

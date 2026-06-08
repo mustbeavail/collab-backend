@@ -17,14 +17,19 @@ import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MeetingNoteService {
@@ -133,6 +138,41 @@ public class MeetingNoteService {
                 (후속 할 일, 담당자, 기한 등)
 
                 ---대화 기록 (""" + messages.size() + "개 메시지)---\n" + log.toString();
+    }
+
+    @Transactional
+    public MeetingNoteResponse generateVoiceMinutes(String userId, Long roomIdx, List<MultipartFile> audioFiles) {
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
+        checkAccess(room, user);
+
+        if (audioFiles == null || audioFiles.isEmpty()) {
+            throw new CustomException(ErrorCode.NO_AUDIO_FILES);
+        }
+
+        List<String> partialMinutes = new ArrayList<>();
+        try {
+            for (MultipartFile file : audioFiles) {
+                String mimeType = file.getContentType() != null ? file.getContentType() : "audio/webm";
+                partialMinutes.add(geminiService.generateContentFromAudio(file.getBytes(), mimeType));
+            }
+        } catch (IOException e) {
+            log.error("오디오 파일 읽기 실패: {}", e.getMessage());
+            throw new CustomException(ErrorCode.AI_GENERATION_FAILED);
+        }
+
+        String aiContent = partialMinutes.size() == 1
+                ? partialMinutes.get(0)
+                : geminiService.mergeMinutesSections(partialMinutes);
+
+        String title = "음성 AI 회의록 - " + LocalDateTime.now().format(DISPLAY_FMT);
+
+        MeetingNote note = new MeetingNote();
+        note.setChatRoom(room);
+        note.setUser(user);
+        note.setTitle(title);
+        note.setContent(aiContent);
+        return MeetingNoteResponse.from(meetingNoteRepository.save(note));
     }
 
     @Transactional

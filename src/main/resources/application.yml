@@ -61,3 +61,7 @@ cors:
 gemini:
   api-key: ${GEMINI_API_KEY}
   model: gemini-2.5-flash
+
+google:
+  translate:
+    api-key: ${GOOGLE_TRANSLATE_API_KEY}

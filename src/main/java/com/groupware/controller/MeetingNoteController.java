@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -28,6 +29,15 @@ public class MeetingNoteController {
             @PathVariable Long roomIdx) {
         return ResponseEntity.ok(ApiResponse.ok(
                 meetingNoteService.getNotesByRoom(userDetails.getUsername(), roomIdx)));
+    }
+
+    @PostMapping("/rooms/{roomIdx}/voice-generate")
+    public ResponseEntity<ApiResponse<MeetingNoteResponse>> generateVoiceMinutes(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long roomIdx,
+            @RequestParam("audio") List<MultipartFile> audioFiles) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                meetingNoteService.generateVoiceMinutes(userDetails.getUsername(), roomIdx, audioFiles)));
     }
 
     @PostMapping("/rooms/{roomIdx}/ai-generate")

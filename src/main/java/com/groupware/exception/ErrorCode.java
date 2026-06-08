@@ -51,7 +51,10 @@ public enum ErrorCode {
     MEETING_NOTE_NOT_FOUND(HttpStatus.NOT_FOUND, "회의록을 찾을 수 없습니다."),
     MEETING_NOTE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "회의록에 대한 권한이 없습니다."),
     NO_MESSAGES_IN_RANGE(HttpStatus.BAD_REQUEST, "선택한 시간 범위에 메시지가 없습니다."),
+    NO_AUDIO_FILES(HttpStatus.BAD_REQUEST, "오디오 파일이 없습니다."),
+    AUDIO_TOO_LARGE(HttpStatus.BAD_REQUEST, "오디오 파일 크기는 15MB를 초과할 수 없습니다."),
     AI_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AI 회의록 생성에 실패했습니다."),
+    TRANSLATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "번역에 실패했습니다."),
 
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 

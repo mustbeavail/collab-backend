@@ -26,6 +26,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import org.springframework.mock.web.MockMultipartFile;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -159,5 +161,37 @@ class MeetingNoteControllerTest {
 
         mockMvc.perform(delete("/api/minutes/99").with(csrf()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(username = "a@test.com")
+    void 음성_AI_회의록_생성_200() throws Exception {
+        given(meetingNoteService.generateVoiceMinutes(eq("a@test.com"), eq(1L), any()))
+                .willReturn(sampleResponse());
+
+        MockMultipartFile audioFile = new MockMultipartFile(
+                "audio", "recording.webm", "audio/webm", "fake-audio".getBytes());
+
+        mockMvc.perform(multipart("/api/minutes/rooms/1/voice-generate")
+                        .file(audioFile)
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.noteIdx").value(1));
+    }
+
+    @Test
+    @WithMockUser(username = "a@test.com")
+    void 음성_AI_회의록_생성_파일없음_400() throws Exception {
+        willThrow(new CustomException(ErrorCode.NO_AUDIO_FILES))
+                .given(meetingNoteService).generateVoiceMinutes(eq("a@test.com"), eq(1L), any());
+
+        MockMultipartFile emptyFile = new MockMultipartFile(
+                "audio", "rec.webm", "audio/webm", new byte[0]);
+
+        mockMvc.perform(multipart("/api/minutes/rooms/1/voice-generate")
+                        .file(emptyFile)
+                        .with(csrf()))
+                .andExpect(status().isBadRequest());
     }
 }
