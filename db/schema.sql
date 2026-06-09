@@ -12,10 +12,10 @@
 --
 -- [규칙] JPA 엔티티 변경 시 이 파일도 반드시 함께 갱신한다.
 --
--- [알려진 한계] FK에 ON UPDATE CASCADE가 설정돼 있지 않다(전부 기본 RESTRICT).
---   탈퇴 회원 재가입 시 AuthService.renameWithdrawnUser 가 user_id 를 rename 하는데,
---   자식 데이터(메시지/친구/팀멤버 등)가 있으면 FK 제약으로 실패할 수 있다.
---   재가입 기능을 보장하려면 별도 마이그레이션으로 자식 FK에 ON UPDATE CASCADE 를 추가할 것.
+-- [2026-06-09 반영] users.user_id 참조 자식 FK에 ON UPDATE CASCADE 설정
+--   (탈퇴 회원 재가입 시 user_id rename → 자식 자동 갱신). users.nick UNIQUE 추가
+--   (탈퇴 회원은 nick=NULL 로 비워 재사용 허용). 기존 DB 적용은
+--   db/migration_20260609_fk_cascade_nick_unique.sql 참조.
 -- ============================================================
 
 /*M!999999\- enable the sandbox mode */
@@ -74,7 +74,7 @@ CREATE TABLE `files` (
   PRIMARY KEY (`file_idx`),
   KEY `room_id` (`room_id`),
   KEY `files_ibfk_1` (`user_id`),
-  CONSTRAINT `files_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `files_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE,
   CONSTRAINT `files_ibfk_2` FOREIGN KEY (`room_id`) REFERENCES `chat_rooms` (`room_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -89,8 +89,8 @@ CREATE TABLE `friends` (
   PRIMARY KEY (`friend_idx`),
   KEY `friends_ibfk_1` (`user_id`),
   KEY `friends_ibfk_2` (`friend_id`),
-  CONSTRAINT `friends_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
-  CONSTRAINT `friends_ibfk_2` FOREIGN KEY (`friend_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `friends_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE,
+  CONSTRAINT `friends_ibfk_2` FOREIGN KEY (`friend_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `meeting_notes`;
@@ -108,7 +108,7 @@ CREATE TABLE `meeting_notes` (
   KEY `room_idx` (`room_idx`),
   KEY `meeting_notes_ibfk_2` (`user_id`),
   CONSTRAINT `meeting_notes_ibfk_1` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`),
-  CONSTRAINT `meeting_notes_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `meeting_notes_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `messages`;
@@ -126,7 +126,7 @@ CREATE TABLE `messages` (
   KEY `room_idx` (`room_idx`),
   KEY `messages_ibfk_2` (`user_id`),
   CONSTRAINT `messages_ibfk_1` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`),
-  CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `messages_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `notification`;
@@ -142,7 +142,7 @@ CREATE TABLE `notification` (
   `created_at` datetime DEFAULT NULL,
   PRIMARY KEY (`noti_idx`),
   KEY `notification_ibfk_1` (`user_id`),
-  CONSTRAINT `notification_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `notification_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `room_members`;
@@ -158,7 +158,7 @@ CREATE TABLE `room_members` (
   PRIMARY KEY (`rm_idx`),
   KEY `room_idx` (`room_idx`),
   KEY `room_members_ibfk_1` (`guest_id`),
-  CONSTRAINT `room_members_ibfk_1` FOREIGN KEY (`guest_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `room_members_ibfk_1` FOREIGN KEY (`guest_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE,
   CONSTRAINT `room_members_ibfk_2` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -183,7 +183,7 @@ CREATE TABLE `schedule` (
   KEY `room_idx` (`room_idx`),
   KEY `team_idx` (`team_idx`),
   KEY `schedule_ibfk_1` (`user_id`),
-  CONSTRAINT `schedule_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `schedule_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE,
   CONSTRAINT `schedule_ibfk_2` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`),
   CONSTRAINT `schedule_ibfk_3` FOREIGN KEY (`team_idx`) REFERENCES `teams` (`team_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -201,7 +201,7 @@ CREATE TABLE `shorthand` (
   PRIMARY KEY (`shorthand_idx`),
   KEY `room_idx` (`room_idx`),
   KEY `shorthand_ibfk_1` (`user_id`),
-  CONSTRAINT `shorthand_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `shorthand_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE,
   CONSTRAINT `shorthand_ibfk_2` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -220,7 +220,7 @@ CREATE TABLE `team_members` (
   KEY `team_idx` (`team_idx`),
   KEY `team_members_ibfk_2` (`user_id`),
   CONSTRAINT `team_members_ibfk_1` FOREIGN KEY (`team_idx`) REFERENCES `teams` (`team_idx`),
-  CONSTRAINT `team_members_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `team_members_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `teams`;
@@ -246,7 +246,8 @@ CREATE TABLE `users` (
   `join_at` datetime DEFAULT NULL,
   `withdrawal_at` datetime DEFAULT NULL,
   `avatar_url` varchar(500) DEFAULT NULL,
-  PRIMARY KEY (`user_id`)
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `uk_users_nick` (`nick`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `voice_session`;
@@ -263,7 +264,7 @@ CREATE TABLE `voice_session` (
   KEY `room_idx` (`room_idx`),
   KEY `voice_session_ibfk_2` (`user_id`),
   CONSTRAINT `voice_session_ibfk_1` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`),
-  CONSTRAINT `voice_session_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `voice_session_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `voice_session_members`;
@@ -279,7 +280,7 @@ CREATE TABLE `voice_session_members` (
   KEY `session_idx` (`session_idx`),
   KEY `voice_session_members_ibfk_2` (`user_id`),
   CONSTRAINT `voice_session_members_ibfk_1` FOREIGN KEY (`session_idx`) REFERENCES `voice_session` (`session_idx`),
-  CONSTRAINT `voice_session_members_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `voice_session_members_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `whiteboard`;
@@ -297,7 +298,7 @@ CREATE TABLE `whiteboard` (
   KEY `room_idx` (`room_idx`),
   KEY `whiteboard_ibfk_2` (`user_id`),
   CONSTRAINT `whiteboard_ibfk_1` FOREIGN KEY (`room_idx`) REFERENCES `chat_rooms` (`room_idx`),
-  CONSTRAINT `whiteboard_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`)
+  CONSTRAINT `whiteboard_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

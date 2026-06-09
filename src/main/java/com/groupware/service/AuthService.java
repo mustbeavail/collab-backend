@@ -46,7 +46,8 @@ public class AuthService {
 
     @Transactional
     public AuthResponse signup(SignupRequest request) {
-        emailVerificationService.consumeVerified(request.getEmail());
+        // 1) 인증 여부만 먼저 검증(키 삭제는 저장 성공 후) — 저장 실패 시 재인증 강요 방지
+        emailVerificationService.requireVerified(request.getEmail());
 
         Optional<User> existingOpt = userRepository.findById(request.getEmail());
         if (existingOpt.isPresent()) {
@@ -59,6 +60,11 @@ public class AuthService {
             entityManager.clear();
         }
 
+        // 2) 닉네임 중복 검증(활성 유저 기준). 탈퇴 유저는 nick=NULL이라 자동 제외됨.
+        if (userRepository.existsByNickAndWithdrawalAtIsNull(request.getNickname())) {
+            throw new CustomException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+        }
+
         User user = new User();
         user.setUserId(request.getEmail());
         user.setPw(passwordEncoder.encode(request.getPassword()));
@@ -66,6 +72,9 @@ public class AuthService {
         user.setAbout(request.getAbout());
         user.setJoinAt(LocalDateTime.now());
         userRepository.save(user);
+
+        // 3) 저장 성공 후에야 인증 키 소비(삭제)
+        emailVerificationService.consumeVerified(request.getEmail());
 
         return issueTokens(user);
     }
@@ -86,6 +95,7 @@ public class AuthService {
         return issueTokens(user);
     }
 
+    @Transactional(readOnly = true)
     public AuthResponse refresh(String refreshToken) {
         String key = REFRESH_KEY_PREFIX + refreshToken;
         String userId = redisTemplate.opsForValue().get(key);
@@ -135,19 +145,32 @@ public class AuthService {
 
     private void renameWithdrawnUser(String email) {
         String newEmail = findNextRenamedEmail(email);
-        // FK에 ON UPDATE CASCADE가 설정돼 있어 자식 테이블이 자동 반영됨
+        // 자식 FK에 ON UPDATE CASCADE 설정됨(db/migration_20260609_fk_cascade_nick_unique.sql)
+        // → users.user_id rename 시 자식 테이블(user_id/friend_id/guest_id) 자동 반영
         entityManager.createNativeQuery("UPDATE users SET user_id = :newId WHERE user_id = :oldId")
                 .setParameter("newId", newEmail)
                 .setParameter("oldId", email)
                 .executeUpdate();
     }
 
+    private static final int USER_ID_MAX_LENGTH = 254; // User.userId 컬럼 길이
+
     private String findNextRenamedEmail(String email) {
         int suffix = 1;
-        while (userRepository.existsById(email + "_" + suffix)) {
+        String candidate;
+        do {
+            candidate = buildRenamedId(email, suffix);
             suffix++;
-        }
-        return email + "_" + suffix;
+        } while (userRepository.existsById(candidate));
+        return candidate;
+    }
+
+    /** email + "_N" 형태로 만들되, 컬럼 길이(254)를 넘으면 email 앞부분을 잘라 맞춘다. */
+    private String buildRenamedId(String email, int suffix) {
+        String tag = "_" + suffix;
+        int maxBase = USER_ID_MAX_LENGTH - tag.length();
+        String base = email.length() > maxBase ? email.substring(0, maxBase) : email;
+        return base + tag;
     }
 
     private AuthResponse issueTokens(User user) {

@@ -58,6 +58,13 @@ file:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+app:
+  cookie:
+    # 기본(local/dev): 동일 도메인이라 Lax + non-secure.
+    # 운영(prod)에서 프론트/백 도메인이 다르면 application-prod.yml 에서 None;Secure 로 override.
+    same-site: Lax
+    secure: false
+
 gemini:
   api-key: ${GEMINI_API_KEY}
   model: gemini-2.5-flash

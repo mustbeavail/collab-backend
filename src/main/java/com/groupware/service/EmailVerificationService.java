@@ -84,6 +84,20 @@ public class EmailVerificationService {
         redisTemplate.opsForValue().set(VERIFIED_KEY_PREFIX + email, "1", VERIFIED_EXPIRY_MINUTES, TimeUnit.MINUTES);
     }
 
+    /**
+     * 이메일 인증 완료 여부만 검증(키 삭제 안 함). 미인증이면 예외.
+     * 회원가입 진입 시점에 먼저 호출해 DB 작업 전에 차단한다.
+     */
+    public void requireVerified(String email) {
+        if (!Boolean.TRUE.equals(redisTemplate.hasKey(VERIFIED_KEY_PREFIX + email))) {
+            throw new CustomException(ErrorCode.EMAIL_NOT_VERIFIED);
+        }
+    }
+
+    /**
+     * 인증 키 소비(삭제). 회원 저장 성공 후에 호출한다.
+     * (저장 실패로 트랜잭션이 롤백돼도 Redis 키 삭제는 롤백되지 않으므로 소비를 뒤로 미룸)
+     */
     public void consumeVerified(String email) {
         String key = VERIFIED_KEY_PREFIX + email;
         if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {

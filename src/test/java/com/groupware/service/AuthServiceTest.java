@@ -13,6 +13,8 @@ import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -34,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -129,6 +132,81 @@ class AuthServiceTest {
 
         assertThat(response.getEmail()).isEqualTo("left@example.com");
         assertThat(response.getNickname()).isEqualTo("새닉네임");
+    }
+
+    @Test
+    void 회원가입_닉네임_중복_예외() {
+        SignupRequest request = signupRequest("new@example.com", "password123", "중복닉", null);
+        given(userRepository.findById("new@example.com")).willReturn(Optional.empty());
+        given(userRepository.existsByNickAndWithdrawalAtIsNull("중복닉")).willReturn(true);
+
+        assertThatThrownBy(() -> authService.signup(request))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS));
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(emailVerificationService, never()).consumeVerified(anyString());
+    }
+
+    @Test
+    void 회원가입_이메일_미인증_예외() {
+        SignupRequest request = signupRequest("new@example.com", "password123", "닉", null);
+        org.mockito.Mockito.doThrow(new CustomException(ErrorCode.EMAIL_NOT_VERIFIED))
+                .when(emailVerificationService).requireVerified("new@example.com");
+
+        assertThatThrownBy(() -> authService.signup(request))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED));
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(emailVerificationService, never()).consumeVerified(anyString());
+    }
+
+    @Test
+    void 회원가입_인증키_소비는_저장_성공_후() {
+        SignupRequest request = signupRequest("ok@example.com", "password123", "굿닉", null);
+        given(userRepository.findById("ok@example.com")).willReturn(Optional.empty());
+        given(userRepository.existsByNickAndWithdrawalAtIsNull("굿닉")).willReturn(false);
+        given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
+        given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
+        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+
+        authService.signup(request);
+
+        // 검증은 맨 앞, 소비(삭제)는 save 성공 후 순서
+        InOrder order = inOrder(emailVerificationService, userRepository);
+        order.verify(emailVerificationService).requireVerified("ok@example.com");
+        order.verify(userRepository).save(any(User.class));
+        order.verify(emailVerificationService).consumeVerified("ok@example.com");
+    }
+
+    @Test
+    void 재가입_긴_이메일_rename_id_254자_이하() {
+        String longEmail = "x".repeat(247) + "@ex.com"; // 254자 = User.userId 컬럼 최대
+        User withdrawn = buildUser(longEmail, "old-pw", "이전닉", LocalDateTime.now().minusDays(1));
+        SignupRequest request = signupRequest(longEmail, "newpassword123", "새닉", null);
+        org.mockito.Mockito.doNothing().when(emailVerificationService).requireVerified(longEmail);
+        given(userRepository.findById(longEmail)).willReturn(Optional.of(withdrawn));
+        given(userRepository.existsById(anyString())).willReturn(false);
+        given(userRepository.existsByNickAndWithdrawalAtIsNull("새닉")).willReturn(false);
+        given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
+        given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
+        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+
+        Query nativeQuery = mock(Query.class);
+        given(entityManager.createNativeQuery(anyString())).willReturn(nativeQuery);
+        ArgumentCaptor<Object> valCaptor = ArgumentCaptor.forClass(Object.class);
+        given(nativeQuery.setParameter(anyString(), valCaptor.capture())).willReturn(nativeQuery);
+        given(nativeQuery.executeUpdate()).willReturn(1);
+
+        authService.signup(request);
+
+        // renameWithdrawnUser 의 첫 setParameter("newId", ...) 값이 254자를 넘지 않아야 함
+        String newId = (String) valCaptor.getAllValues().get(0);
+        assertThat(newId.length()).isLessThanOrEqualTo(254);
+        assertThat(newId).endsWith("_1");
     }
 
     // ─── checkEmail ───────────────────────────────────────────────────────

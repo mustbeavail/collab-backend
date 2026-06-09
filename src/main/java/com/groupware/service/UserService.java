@@ -48,6 +48,10 @@ public class UserService {
         if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
+        // 닉네임 중복 검증(본인 제외 활성 유저). DB UNIQUE(nick) 위반 전에 차단.
+        if (userRepository.existsNickByOtherUser(request.getNickname(), userId)) {
+            throw new CustomException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+        }
         user.setNick(request.getNickname());
         // null이면 기존 about 유지, 빈 문자열("")은 의도적 삭제로 허용
         if (request.getAbout() != null) {
@@ -79,6 +83,9 @@ public class UserService {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
         user.setWithdrawalAt(LocalDateTime.now());
+        // 닉네임 해제 → 탈퇴 회원의 닉네임을 다른 사용자가 재사용 가능
+        // (DB UNIQUE(nick)는 NULL 다중 허용이므로 탈퇴 회원끼리 충돌 없음)
+        user.setNick(null);
         userRepository.save(user);
     }
 

@@ -1,9 +1,6 @@
 package com.groupware.websocket;
 
-import com.groupware.repository.ChatRoomRepository;
-import com.groupware.repository.RoomMemberRepository;
-import com.groupware.repository.TeamMemberRepository;
-import com.groupware.repository.UserRepository;
+import com.groupware.service.RoomMembershipChecker;
 import com.groupware.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +19,8 @@ import java.security.Principal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class WebSocketAuthInterceptorTest {
@@ -29,10 +28,9 @@ class WebSocketAuthInterceptorTest {
     @InjectMocks private WebSocketAuthInterceptor interceptor;
     @Mock private JwtUtil jwtUtil;
     @Mock private MessageChannel channel;
-    @Mock private ChatRoomRepository chatRoomRepository;
-    @Mock private RoomMemberRepository roomMemberRepository;
-    @Mock private TeamMemberRepository teamMemberRepository;
-    @Mock private UserRepository userRepository;
+    @Mock private RoomMembershipChecker roomMembershipChecker;
+
+    // ─── CONNECT ─────────────────────────────────────────────────────────
 
     @Test
     void CONNECT_유효한_토큰_Principal_설정() {
@@ -75,6 +73,76 @@ class WebSocketAuthInterceptorTest {
         assertThat(result).isNotNull();
     }
 
+    // ─── SUBSCRIBE 멤버십 인가 ────────────────────────────────────────────
+
+    @Test
+    void SUBSCRIBE_voice_멤버_통과() {
+        given(roomMembershipChecker.isMember(5L, "user@test.com")).willReturn(true);
+
+        Message<?> result = interceptor.preSend(
+                buildSubscribe("/topic/voice/5", principal("user@test.com")), channel);
+
+        assertThat(result).isNotNull();
+        verify(roomMembershipChecker).isMember(5L, "user@test.com");
+    }
+
+    @Test
+    void SUBSCRIBE_voice_비멤버_예외() {
+        given(roomMembershipChecker.isMember(5L, "user@test.com")).willReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                buildSubscribe("/topic/voice/5", principal("user@test.com")), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("구독 권한");
+    }
+
+    @Test
+    void SUBSCRIBE_chart_비멤버_예외() {
+        given(roomMembershipChecker.isMember(5L, "user@test.com")).willReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                buildSubscribe("/topic/chart/5", principal("user@test.com")), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("구독 권한");
+    }
+
+    @Test
+    void SUBSCRIBE_room_비멤버_예외_회귀방지() {
+        given(roomMembershipChecker.isMember(5L, "user@test.com")).willReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                buildSubscribe("/topic/room/5", principal("user@test.com")), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("구독 권한");
+    }
+
+    @Test
+    void SUBSCRIBE_Principal_없으면_예외() {
+        assertThatThrownBy(() -> interceptor.preSend(
+                buildSubscribe("/topic/voice/5", null), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("인증되지 않은 구독");
+        verifyNoInteractions(roomMembershipChecker);
+    }
+
+    @Test
+    void SUBSCRIBE_잘못된_경로_예외() {
+        assertThatThrownBy(() -> interceptor.preSend(
+                buildSubscribe("/topic/voice/abc", principal("user@test.com")), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("잘못된 구독 경로");
+        verifyNoInteractions(roomMembershipChecker);
+    }
+
+    @Test
+    void SUBSCRIBE_비보호_토픽_검증없이_통과() {
+        Message<?> result = interceptor.preSend(
+                buildSubscribe("/topic/notifications/5", principal("user@test.com")), channel);
+
+        assertThat(result).isNotNull();
+        verifyNoInteractions(roomMembershipChecker);
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────
 
     private Message<byte[]> buildConnect(String authHeader) {
@@ -84,5 +152,19 @@ class WebSocketAuthInterceptorTest {
         }
         accessor.setLeaveMutable(true);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Message<byte[]> buildSubscribe(String destination, Principal principal) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination(destination);
+        if (principal != null) {
+            accessor.setUser(principal);
+        }
+        accessor.setLeaveMutable(true);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Principal principal(String name) {
+        return () -> name;
     }
 }

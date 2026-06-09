@@ -1,15 +1,10 @@
 package com.groupware.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.groupware.domain.ChatRoom;
-import com.groupware.domain.User;
 import com.groupware.dto.chart.ChartAnalyzeRequest;
 import com.groupware.dto.chart.ChartAnalyzeResponse;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
-import com.groupware.repository.ChatRoomRepository;
-import com.groupware.repository.RoomMemberRepository;
-import com.groupware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,20 +18,11 @@ import java.util.stream.Collectors;
 public class ChartService {
 
     private final GeminiService geminiService;
-    private final ChatRoomRepository chatRoomRepository;
-    private final RoomMemberRepository roomMemberRepository;
-    private final UserRepository userRepository;
+    private final RoomMembershipChecker membershipChecker;
     private final ObjectMapper objectMapper;
 
     public ChartAnalyzeResponse analyze(String userId, ChartAnalyzeRequest request) {
-        ChatRoom room = chatRoomRepository.findById(request.getRoomIdx())
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)) {
-            throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
-        }
+        membershipChecker.check(request.getRoomIdx(), userId);
 
         String csvData = buildCsv(request.getTableData());
         String prompt = buildPrompt(csvData, request.getQuestion());

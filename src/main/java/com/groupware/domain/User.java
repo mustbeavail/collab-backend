@@ -18,7 +18,7 @@ public class User {
     @Column(name = "pw", length = 100)
     private String pw;
 
-    @Column(name = "nick", length = 40)
+    @Column(name = "nick", length = 40, unique = true)
     private String nick;
 
     @Column(name = "about", length = 6000)

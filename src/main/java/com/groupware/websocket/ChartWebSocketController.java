@@ -3,6 +3,7 @@ package com.groupware.websocket;
 import com.groupware.dto.chart.ChartSharePayload;
 import com.groupware.domain.User;
 import com.groupware.repository.UserRepository;
+import com.groupware.service.RoomMembershipChecker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -17,6 +18,7 @@ public class ChartWebSocketController {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final UserRepository userRepository;
+    private final RoomMembershipChecker roomMembershipChecker;
 
     @MessageMapping("/chart.share/{roomIdx}")
     public void shareChart(@DestinationVariable Long roomIdx,
@@ -24,6 +26,7 @@ public class ChartWebSocketController {
                            Principal principal) {
         if (principal == null) return;
         String userId = principal.getName();
+        roomMembershipChecker.check(roomIdx, userId);
         String nickname = userRepository.findById(userId)
                 .map(User::getNick)
                 .orElse(userId);

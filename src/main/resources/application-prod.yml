@@ -6,3 +6,9 @@ spring:
 
 server:
   port: 8080
+
+app:
+  cookie:
+    # 운영: 프론트/백 도메인이 달라 cross-site 요청에 쿠키가 붙어야 하므로 None + Secure 필수
+    same-site: None
+    secure: true

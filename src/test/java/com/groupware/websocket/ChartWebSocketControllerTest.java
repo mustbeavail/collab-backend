@@ -3,7 +3,10 @@ package com.groupware.websocket;
 import com.groupware.domain.User;
 import com.groupware.dto.chart.ChartAnalyzeResponse;
 import com.groupware.dto.chart.ChartSharePayload;
+import com.groupware.exception.CustomException;
+import com.groupware.exception.ErrorCode;
 import com.groupware.repository.UserRepository;
+import com.groupware.service.RoomMembershipChecker;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -16,6 +19,7 @@ import java.security.Principal;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
 
@@ -25,6 +29,7 @@ class ChartWebSocketControllerTest {
     @InjectMocks private ChartWebSocketController controller;
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private UserRepository userRepository;
+    @Mock private RoomMembershipChecker roomMembershipChecker;
 
     private Principal principal(String name) {
         return () -> name;
@@ -64,5 +69,18 @@ class ChartWebSocketControllerTest {
         ArgumentCaptor<ChartSharePayload> captor = ArgumentCaptor.forClass(ChartSharePayload.class);
         verify(messagingTemplate).convertAndSend(eq("/topic/chart/1"), captor.capture());
         assertThat(captor.getValue().getFromNickname()).isEqualTo("ghost@test.com");
+    }
+
+    @Test
+    void shareChart_throws_and_does_not_broadcast_when_not_member() {
+        doThrow(new CustomException(ErrorCode.NOT_ROOM_MEMBER))
+                .when(roomMembershipChecker).check(1L, "intruder@test.com");
+
+        assertThatThrownBy(() ->
+                controller.shareChart(1L, new ChartSharePayload(), principal("intruder@test.com")))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_ROOM_MEMBER);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }
 }

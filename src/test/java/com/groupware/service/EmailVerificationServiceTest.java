@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -41,7 +42,8 @@ class EmailVerificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        given(redisTemplate.opsForValue()).willReturn(valueOps);
+        // requireVerified 테스트는 opsForValue를 쓰지 않으므로 lenient로 둔다
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
     // ─── sendCode ─────────────────────────────────────────────────────────
@@ -106,6 +108,48 @@ class EmailVerificationServiceTest {
                         .isEqualTo(ErrorCode.EMAIL_CODE_INVALID));
 
         verify(redisTemplate, never()).delete(anyString());
+    }
+
+    // ─── requireVerified / consumeVerified ────────────────────────────────
+
+    @Test
+    void requireVerified_인증됨_통과_키삭제안함() {
+        given(redisTemplate.hasKey("email:verified:test@example.com")).willReturn(true);
+
+        emailVerificationService.requireVerified("test@example.com"); // 예외 없이 통과
+
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    @Test
+    void requireVerified_인증안됨_예외() {
+        given(redisTemplate.hasKey("email:verified:none@example.com")).willReturn(false);
+
+        assertThatThrownBy(() -> emailVerificationService.requireVerified("none@example.com"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED));
+
+        verify(redisTemplate, never()).delete(anyString());
+    }
+
+    @Test
+    void consumeVerified_인증됨_키삭제() {
+        given(redisTemplate.hasKey("email:verified:test@example.com")).willReturn(true);
+
+        emailVerificationService.consumeVerified("test@example.com");
+
+        verify(redisTemplate).delete("email:verified:test@example.com");
+    }
+
+    @Test
+    void consumeVerified_인증안됨_예외() {
+        given(redisTemplate.hasKey("email:verified:none@example.com")).willReturn(false);
+
+        assertThatThrownBy(() -> emailVerificationService.consumeVerified("none@example.com"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.EMAIL_NOT_VERIFIED));
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────

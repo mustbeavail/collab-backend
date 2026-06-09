@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -145,6 +146,29 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.userId").value("uid-1"))
                 .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
+    }
+
+    @Test
+    void 로그인_시_refreshToken_쿠키_HttpOnly_SameSite_Lax_local() throws Exception {
+        AuthResponse stub = AuthResponse.builder()
+                .accessToken("access-token").userId("uid-1").email("test@example.com")
+                .nickname("테스터").refreshToken("rt-123").build();
+        given(authService.login(any())).willReturn(stub);
+
+        var mvcResult = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("email", "test@example.com", "password", "password123"))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        // Cookie 객체로 직접 검증 (MockHttpServletResponse는 Set-Cookie 헤더에 SameSite를 직렬화하지 않음)
+        Cookie refreshCookie = mvcResult.getResponse().getCookie("refreshToken");
+        assertThat(refreshCookie).isNotNull();
+        assertThat(refreshCookie.getValue()).isEqualTo("rt-123");
+        assertThat(refreshCookie.isHttpOnly()).isTrue();
+        assertThat(refreshCookie.getSecure()).isFalse();              // local 기본: secure=false
+        assertThat(refreshCookie.getAttribute("SameSite")).isEqualTo("Lax");
+        assertThat(refreshCookie.getPath()).isEqualTo("/api/auth/refresh");
     }
 
     @Test

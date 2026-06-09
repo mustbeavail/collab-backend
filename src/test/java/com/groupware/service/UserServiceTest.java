@@ -23,7 +23,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -91,6 +93,20 @@ class UserServiceTest {
         assertThat(result.getNickname()).isEqualTo("새닉네임");
         assertThat(result.getAbout()).isEqualTo("새소개");
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void 프로필_수정_닉네임_중복_예외() {
+        User user = buildUser("uid-1", "test@test.com", "기존닉네임", "기존소개", null);
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(userRepository.existsNickByOtherUser("중복닉", "uid-1")).willReturn(true);
+
+        assertThatThrownBy(() -> userService.updateMyProfile("uid-1", buildRequest("중복닉", null)))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS));
+
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
@@ -200,6 +216,7 @@ class UserServiceTest {
         userService.withdraw("uid-1");
 
         assertThat(user.getWithdrawalAt()).isNotNull();
+        assertThat(user.getNick()).isNull();  // 닉네임 해제 → 재사용 가능
         verify(userRepository).save(user);
     }
 

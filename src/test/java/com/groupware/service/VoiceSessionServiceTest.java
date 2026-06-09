@@ -1,12 +1,9 @@
 package com.groupware.service;
 
-import com.groupware.domain.ChatRoom;
 import com.groupware.domain.User;
 import com.groupware.dto.voice.SignalingMessage;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
-import com.groupware.repository.ChatRoomRepository;
-import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,29 +27,22 @@ class VoiceSessionServiceTest {
     @InjectMocks private VoiceSessionService service;
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private UserRepository userRepository;
-    @Mock private ChatRoomRepository chatRoomRepository;
-    @Mock private RoomMemberRepository roomMemberRepository;
+    @Mock private RoomMembershipChecker membershipChecker;
 
     private User userA;
-    private ChatRoom room;
 
     @BeforeEach
     void setUp() {
         userA = new User();
         userA.setUserId("alice@test.com");
         userA.setNick("Alice");
-
-        room = new ChatRoom();
-        room.setRoomIdx(1L);
     }
 
     // ── join ──────────────────────────────────────────
 
     @Test
     void join_broadcasts_JOIN_message_to_topic() {
-        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("alice@test.com")).willReturn(Optional.of(userA));
-        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
 
         service.join(1L, "alice@test.com", "VOICE");
 
@@ -66,9 +56,7 @@ class VoiceSessionServiceTest {
 
     @Test
     void join_defaults_sessionType_to_VOICE_when_null() {
-        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("alice@test.com")).willReturn(Optional.of(userA));
-        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
 
         service.join(1L, "alice@test.com", null);
 
@@ -79,22 +67,26 @@ class VoiceSessionServiceTest {
 
     @Test
     void join_throws_CHAT_ROOM_NOT_FOUND_when_room_missing() {
-        given(chatRoomRepository.findById(99L)).willReturn(Optional.empty());
+        doThrow(new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND))
+                .when(membershipChecker).check(99L, "alice@test.com");
 
         assertThatThrownBy(() -> service.join(99L, "alice@test.com", "VOICE"))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.CHAT_ROOM_NOT_FOUND);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }
 
     @Test
     void join_throws_NOT_ROOM_MEMBER_when_not_member() {
-        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
-        given(userRepository.findById("alice@test.com")).willReturn(Optional.of(userA));
-        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(false);
+        doThrow(new CustomException(ErrorCode.NOT_ROOM_MEMBER))
+                .when(membershipChecker).check(1L, "alice@test.com");
 
         assertThatThrownBy(() -> service.join(1L, "alice@test.com", "VOICE"))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_ROOM_MEMBER);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }
 
     // ── leave ─────────────────────────────────────────
@@ -120,6 +112,18 @@ class VoiceSessionServiceTest {
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }
 
+    @Test
+    void leave_throws_when_not_member() {
+        doThrow(new CustomException(ErrorCode.NOT_ROOM_MEMBER))
+                .when(membershipChecker).check(1L, "intruder@test.com");
+
+        assertThatThrownBy(() -> service.leave(1L, "intruder@test.com"))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_ROOM_MEMBER);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
     // ── signal ────────────────────────────────────────
 
     @Test
@@ -138,6 +142,21 @@ class VoiceSessionServiceTest {
         assertThat(captor.getValue().getFromUserId()).isEqualTo("alice@test.com");
         assertThat(captor.getValue().getFromNickname()).isEqualTo("Alice");
         assertThat(captor.getValue().getType()).isEqualTo("OFFER");
+    }
+
+    @Test
+    void signal_throws_and_does_not_route_when_not_member() {
+        doThrow(new CustomException(ErrorCode.NOT_ROOM_MEMBER))
+                .when(membershipChecker).check(1L, "intruder@test.com");
+        SignalingMessage msg = new SignalingMessage();
+        msg.setType("OFFER");
+        msg.setToUserId("bob@test.com");
+
+        assertThatThrownBy(() -> service.signal(1L, "intruder@test.com", msg))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_ROOM_MEMBER);
+
+        verify(messagingTemplate, never()).convertAndSendToUser(anyString(), anyString(), any(Object.class));
     }
 
     // ── toggleMic ─────────────────────────────────────
@@ -163,5 +182,17 @@ class VoiceSessionServiceTest {
         ArgumentCaptor<SignalingMessage> captor = ArgumentCaptor.forClass(SignalingMessage.class);
         verify(messagingTemplate).convertAndSend(eq("/topic/voice/1"), captor.capture());
         assertThat(captor.getValue().getMicOn()).isTrue();
+    }
+
+    @Test
+    void toggleMic_throws_and_does_not_broadcast_when_not_member() {
+        doThrow(new CustomException(ErrorCode.NOT_ROOM_MEMBER))
+                .when(membershipChecker).check(1L, "intruder@test.com");
+
+        assertThatThrownBy(() -> service.toggleMic(1L, "intruder@test.com", true))
+                .isInstanceOf(CustomException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_ROOM_MEMBER);
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }
 }

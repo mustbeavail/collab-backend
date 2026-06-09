@@ -29,6 +29,13 @@ public class AuthController {
     @Value("${jwt.refresh-token-expiry}")
     private long refreshTokenExpiry;
 
+    // 로컬/개발(동일 도메인)은 Lax/non-secure, 운영(크로스 도메인 HTTPS)은 None/Secure
+    @Value("${app.cookie.same-site:Lax}")
+    private String cookieSameSite;
+
+    @Value("${app.cookie.secure:false}")
+    private boolean cookieSecure;
+
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<AuthResponse>> signup(
             @RequestBody @Valid SignupRequest request,
@@ -86,34 +93,26 @@ public class AuthController {
     }
 
     private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
-        Cookie cookie = new Cookie("refreshToken", refreshToken);
-        cookie.setHttpOnly(true);
-        cookie.setPath("/api/auth/refresh");
-        cookie.setMaxAge((int) (refreshTokenExpiry / 1000));
-        cookie.setAttribute("SameSite", "Lax");
-        response.addCookie(cookie);
-
-        // logout 경로도 쿠키 접근 허용
-        Cookie logoutCookie = new Cookie("refreshToken", refreshToken);
-        logoutCookie.setHttpOnly(true);
-        logoutCookie.setPath("/api/auth/logout");
-        logoutCookie.setMaxAge((int) (refreshTokenExpiry / 1000));
-        logoutCookie.setAttribute("SameSite", "Lax");
-        response.addCookie(logoutCookie);
+        int maxAge = (int) (refreshTokenExpiry / 1000);
+        // refresh / logout 두 경로에서 쿠키 접근 허용
+        response.addCookie(buildRefreshCookie("/api/auth/refresh", refreshToken, maxAge));
+        response.addCookie(buildRefreshCookie("/api/auth/logout", refreshToken, maxAge));
     }
 
     private void clearRefreshTokenCookie(HttpServletResponse response) {
-        Cookie c1 = new Cookie("refreshToken", "");
-        c1.setHttpOnly(true);
-        c1.setPath("/api/auth/refresh");
-        c1.setMaxAge(0);
-        response.addCookie(c1);
+        // 삭제 쿠키도 동일 속성(SameSite/Secure)으로 내려야 브라우저가 제대로 만료시킨다
+        response.addCookie(buildRefreshCookie("/api/auth/refresh", "", 0));
+        response.addCookie(buildRefreshCookie("/api/auth/logout", "", 0));
+    }
 
-        Cookie c2 = new Cookie("refreshToken", "");
-        c2.setHttpOnly(true);
-        c2.setPath("/api/auth/logout");
-        c2.setMaxAge(0);
-        response.addCookie(c2);
+    private Cookie buildRefreshCookie(String path, String value, int maxAge) {
+        Cookie cookie = new Cookie("refreshToken", value);
+        cookie.setHttpOnly(true);
+        cookie.setPath(path);
+        cookie.setMaxAge(maxAge);
+        cookie.setSecure(cookieSecure);
+        cookie.setAttribute("SameSite", cookieSameSite);
+        return cookie;
     }
 
     private String extractRefreshTokenCookie(HttpServletRequest request) {

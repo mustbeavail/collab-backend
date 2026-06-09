@@ -1,12 +1,9 @@
 package com.groupware.service;
 
-import com.groupware.domain.ChatRoom;
 import com.groupware.domain.User;
 import com.groupware.dto.voice.SignalingMessage;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
-import com.groupware.repository.ChatRoomRepository;
-import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -21,21 +18,15 @@ public class VoiceSessionService {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final UserRepository userRepository;
-    private final ChatRoomRepository chatRoomRepository;
-    private final RoomMemberRepository roomMemberRepository;
+    private final RoomMembershipChecker membershipChecker;
 
     // roomIdx → 현재 음성 세션 참여자 userId Set (인메모리, 단일 인스턴스 기준)
     private final ConcurrentHashMap<Long, Set<String>> roomParticipants = new ConcurrentHashMap<>();
 
     public void join(Long roomIdx, String userId, String sessionType) {
-        ChatRoom room = chatRoomRepository.findById(roomIdx)
-                .filter(r -> r.getDelDate() == null)
-                .orElseThrow(() -> new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+        membershipChecker.check(roomIdx, userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
-        if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)) {
-            throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
-        }
 
         roomParticipants.computeIfAbsent(roomIdx, k -> ConcurrentHashMap.newKeySet()).add(userId);
 
@@ -48,6 +39,8 @@ public class VoiceSessionService {
     }
 
     public void leave(Long roomIdx, String userId) {
+        membershipChecker.check(roomIdx, userId);
+
         Set<String> parts = roomParticipants.get(roomIdx);
         if (parts != null) {
             parts.remove(userId);
@@ -64,6 +57,7 @@ public class VoiceSessionService {
     }
 
     public void signal(Long roomIdx, String fromUserId, SignalingMessage msg) {
+        membershipChecker.check(roomIdx, fromUserId);
         String nick = userRepository.findById(fromUserId)
                 .map(User::getNick)
                 .orElse(fromUserId);
@@ -73,6 +67,7 @@ public class VoiceSessionService {
     }
 
     public void toggleMic(Long roomIdx, String userId, boolean micOn) {
+        membershipChecker.check(roomIdx, userId);
         userRepository.findById(userId).ifPresent(user -> {
             SignalingMessage msg = new SignalingMessage();
             msg.setType("MIC_TOGGLE");
