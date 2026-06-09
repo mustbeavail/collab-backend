@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
 public class ChatRoomDetailResponse {
     private Long roomIdx;
     private String roomName;
-    private String description;
     private LocalDateTime createdAt;
     private boolean isDm;
 
@@ -18,7 +17,6 @@ public class ChatRoomDetailResponse {
         return ChatRoomDetailResponse.builder()
                 .roomIdx(room.getRoomIdx())
                 .roomName(room.getRoomName())
-                .description(room.getDescription())
                 .createdAt(room.getCreatedAt())
                 .isDm(room.getTeam() == null)
                 .build();

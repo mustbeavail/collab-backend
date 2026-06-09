@@ -23,9 +23,6 @@ public class ChatRoom {
     @Column(name = "room_name", length = 255)
     private String roomName;
 
-    @Column(name = "description", length = 500)
-    private String description;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

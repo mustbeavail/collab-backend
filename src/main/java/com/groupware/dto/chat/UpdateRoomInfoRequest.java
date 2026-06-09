@@ -8,5 +8,4 @@ import lombok.NoArgsConstructor;
 public class UpdateRoomInfoRequest {
     @NotBlank
     private String roomName;
-    private String description;
 }

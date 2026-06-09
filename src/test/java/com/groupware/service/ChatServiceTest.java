@@ -277,7 +277,6 @@ class ChatServiceTest {
 
     @Test
     void 방정보_조회_성공() {
-        ReflectionTestUtils.setField(room, "description", "테스트 설명");
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
@@ -285,7 +284,6 @@ class ChatServiceTest {
         ChatRoomDetailResponse result = chatService.getRoomInfo("a@test.com", 1L);
 
         assertThat(result.getRoomName()).isEqualTo("general");
-        assertThat(result.getDescription()).isEqualTo("테스트 설명");
         assertThat(result.isDm()).isTrue();
     }
 
@@ -297,7 +295,6 @@ class ChatServiceTest {
 
         UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
         ReflectionTestUtils.setField(req, "roomName", "새이름");
-        ReflectionTestUtils.setField(req, "description", "새설명");
 
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
@@ -307,7 +304,6 @@ class ChatServiceTest {
         ChatRoomDetailResponse result = chatService.updateRoomInfo("a@test.com", 1L, req);
 
         assertThat(result.getRoomName()).isEqualTo("새이름");
-        assertThat(result.getDescription()).isEqualTo("새설명");
     }
 
     @Test

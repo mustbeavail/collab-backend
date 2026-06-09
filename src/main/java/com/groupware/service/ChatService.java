@@ -229,7 +229,6 @@ public class ChatService {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
         room.setRoomName(request.getRoomName());
-        room.setDescription(request.getDescription());
         chatRoomRepository.save(room);
         return ChatRoomDetailResponse.from(room);
     }
