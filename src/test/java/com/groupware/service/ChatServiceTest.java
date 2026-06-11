@@ -52,6 +52,7 @@ class ChatServiceTest {
     @Mock private TeamMemberRepository teamMemberRepository;
     @Mock private UserRepository userRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private TestBotService testBotService;
 
     private User userA;
     private User userB;

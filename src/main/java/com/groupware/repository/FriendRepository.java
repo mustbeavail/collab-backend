@@ -22,6 +22,8 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
 
     Optional<Friend> findByFriendIdxAndFriend(Long friendIdx, User friend);
 
+    Optional<Friend> findByUserAndFriend(User user, User friend);
+
     @Query("SELECT f FROM Friend f WHERE f.friendIdx = :idx AND (f.user = :user OR f.friend = :user) AND f.status = 'ACCEPTED'")
     Optional<Friend> findAcceptedByIdxAndUser(@Param("idx") Long idx, @Param("user") User user);
 }

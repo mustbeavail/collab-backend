@@ -50,6 +50,10 @@ public class WebSocketEventListener {
     }
 
     public boolean isOnline(String userId) {
+        // 테스트봇은 실제 WS 접속이 없으므로 항상 온라인으로 취급
+        if (com.groupware.service.TestBotService.BOT_USER_ID.equals(userId)) {
+            return true;
+        }
         return Boolean.TRUE.equals(redisTemplate.hasKey(ONLINE_PREFIX + userId));
     }
 

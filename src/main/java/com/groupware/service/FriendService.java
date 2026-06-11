@@ -28,6 +28,7 @@ public class FriendService {
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final WebSocketEventListener wsEventListener;
+    private final TestBotService testBotService;
 
     public List<UserSearchResponse> searchUsers(String q, String myUserId) {
         return userRepository.searchByNickOrId(q).stream()
@@ -76,6 +77,11 @@ public class FriendService {
         Friend request = friendRepository.findByFriendIdxAndFriend(friendIdx, me)
                 .orElseThrow(() -> new CustomException(ErrorCode.FRIEND_REQUEST_NOT_FOUND));
         request.setStatus("ACCEPTED");
+
+        // 테스트봇의 요청을 수락한 경우 → 봇이 DM 방을 만들고 안내 메시지를 보낸다
+        if (testBotService.isBotId(request.getUser().getUserId())) {
+            testBotService.onFriendshipWithBotAccepted(me.getUserId());
+        }
     }
 
     @Transactional

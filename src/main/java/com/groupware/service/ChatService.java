@@ -44,6 +44,7 @@ public class ChatService {
     private final TeamMemberRepository teamMemberRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final TestBotService testBotService;
 
     @Transactional(readOnly = true)
     public MessagePageResponse getMessages(String userId, Long roomIdx, Long before, int size) {
@@ -99,6 +100,9 @@ public class ChatService {
                 .build();
 
         messagingTemplate.convertAndSend("/topic/room/" + roomIdx, payload);
+
+        // 테스트봇이 참여한 DM이면 비동기로 답장 생성 (봇 자신의 메시지는 내부에서 무시)
+        testBotService.maybeAutoReply(roomIdx, msg.getMsgIdx(), user.getUserId(), user.getNick(), msg.getContent());
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)

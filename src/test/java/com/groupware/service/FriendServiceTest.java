@@ -41,6 +41,7 @@ class FriendServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private WebSocketEventListener wsEventListener;
+    @Mock private TestBotService testBotService;
 
     // ─── searchUsers ──────────────────────────────────────────────────────
 
