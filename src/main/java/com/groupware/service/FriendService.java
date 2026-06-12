@@ -67,6 +67,7 @@ public class FriendService {
                         .nickname(me.getNick())
                         .email(me.getUserId())
                         .status("PENDING")
+                        .avatarUrl(me.getAvatarUrl())
                         .build()
         );
     }
@@ -112,6 +113,15 @@ public class FriendService {
     public List<FriendResponse> getPendingRequests(String myUserId) {
         User me = getUser(myUserId);
         return friendRepository.findByFriendAndStatus(me, "PENDING").stream()
+                .map(f -> FriendResponse.of(f, me))
+                .toList();
+    }
+
+    // 내가 보냈지만 아직 수락/거절 안 된 요청 목록(qa 항목6) — 친구패널에 '대기중'으로 표시
+    @Transactional(readOnly = true)
+    public List<FriendResponse> getSentRequests(String myUserId) {
+        User me = getUser(myUserId);
+        return friendRepository.findByUserAndStatus(me, "PENDING").stream()
                 .map(f -> FriendResponse.of(f, me))
                 .toList();
     }

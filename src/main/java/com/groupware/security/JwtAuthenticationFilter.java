@@ -33,7 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String token = header.substring(7);
-        if (jwtUtil.validate(token) && !jwtUtil.isBlacklisted(token)) {
+        if (jwtUtil.validate(token) && !jwtUtil.isBlacklisted(token) && jwtUtil.isCurrentSession(token)) {
             String userId = jwtUtil.getUserId(token);
             User principal = new User(userId, "", List.of(new SimpleGrantedAuthority("ROLE_USER")));
             UsernamePasswordAuthenticationToken auth =

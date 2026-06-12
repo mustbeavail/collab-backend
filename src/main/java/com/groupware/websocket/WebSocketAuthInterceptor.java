@@ -43,7 +43,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 throw new MessagingException("인증 토큰이 없습니다.");
             }
             String token = authHeader.substring(7);
-            if (!jwtUtil.validate(token) || jwtUtil.isBlacklisted(token)) {
+            if (!jwtUtil.validate(token) || jwtUtil.isBlacklisted(token) || !jwtUtil.isCurrentSession(token)) {
                 throw new MessagingException("유효하지 않은 토큰입니다.");
             }
             String userId = jwtUtil.getUserId(token);

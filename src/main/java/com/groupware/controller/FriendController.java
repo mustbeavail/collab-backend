@@ -40,6 +40,13 @@ public class FriendController {
         return ResponseEntity.ok(ApiResponse.ok(friendService.getPendingRequests(userDetails.getUsername())));
     }
 
+    // 내가 보낸 대기중 요청 목록(qa 항목6)
+    @GetMapping("/requests/sent")
+    public ResponseEntity<ApiResponse<List<FriendResponse>>> getSentRequests(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.ok(friendService.getSentRequests(userDetails.getUsername())));
+    }
+
     @PostMapping("/request")
     public ResponseEntity<ApiResponse<Void>> sendRequest(
             @RequestBody @Valid FriendRequestDto dto,

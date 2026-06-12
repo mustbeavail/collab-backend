@@ -120,6 +120,8 @@ public class AuthService {
                 String storedToken = redisTemplate.opsForValue().get(userSessionKey);
                 if (refreshToken.equals(storedToken)) {
                     redisTemplate.delete(userSessionKey);
+                    // 현재 세션 id도 제거 → 남은 access token도 즉시 거부됨
+                    redisTemplate.delete(JwtUtil.SESSION_KEY_PREFIX + userId);
                 }
             }
         }
@@ -174,7 +176,10 @@ public class AuthService {
     }
 
     private AuthResponse issueTokens(User user) {
-        String accessToken = jwtUtil.generateAccessToken(user.getUserId());
+        // sessionId: access token에 sid 클레임으로 박고 redis에 현재 세션으로 기록 →
+        // 새 로그인 시 sid 갱신되어 기존 access token이 서버에서 즉시 거부됨(새로고침 불필요)
+        String sessionId = UUID.randomUUID().toString();
+        String accessToken = jwtUtil.generateAccessToken(user.getUserId(), sessionId);
         String refreshToken = UUID.randomUUID().toString();
 
         // 기존 세션 무효화 — 역방향 매핑에서 이전 refreshToken 조회 후 삭제
@@ -198,6 +203,13 @@ public class AuthService {
         redisTemplate.opsForValue().set(
                 userSessionKey,
                 refreshToken,
+                refreshTokenExpiry,
+                TimeUnit.MILLISECONDS
+        );
+        // 현재 활성 세션 id 기록(JwtUtil.isCurrentSession이 대조)
+        redisTemplate.opsForValue().set(
+                JwtUtil.SESSION_KEY_PREFIX + user.getUserId(),
+                sessionId,
                 refreshTokenExpiry,
                 TimeUnit.MILLISECONDS
         );

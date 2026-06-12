@@ -36,6 +36,7 @@ class WebSocketAuthInterceptorTest {
     void CONNECT_유효한_토큰_Principal_설정() {
         given(jwtUtil.validate("valid-token")).willReturn(true);
         given(jwtUtil.isBlacklisted("valid-token")).willReturn(false);
+        given(jwtUtil.isCurrentSession("valid-token")).willReturn(true);
         given(jwtUtil.getUserId("valid-token")).willReturn("user@test.com");
 
         Message<?> result = interceptor.preSend(buildConnect("Bearer valid-token"), channel);
@@ -51,6 +52,18 @@ class WebSocketAuthInterceptorTest {
         given(jwtUtil.validate("bad-token")).willReturn(false);
 
         assertThatThrownBy(() -> interceptor.preSend(buildConnect("Bearer bad-token"), channel))
+                .isInstanceOf(MessagingException.class)
+                .hasMessageContaining("유효하지 않은 토큰");
+    }
+
+    @Test
+    void CONNECT_다른기기_로그인_세션_불일치_예외() {
+        // 새 로그인으로 sid가 갱신되어 기존 토큰은 현재 세션이 아님 → WS 연결 거부
+        given(jwtUtil.validate("stale-token")).willReturn(true);
+        given(jwtUtil.isBlacklisted("stale-token")).willReturn(false);
+        given(jwtUtil.isCurrentSession("stale-token")).willReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(buildConnect("Bearer stale-token"), channel))
                 .isInstanceOf(MessagingException.class)
                 .hasMessageContaining("유효하지 않은 토큰");
     }

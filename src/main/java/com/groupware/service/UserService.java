@@ -165,6 +165,24 @@ public class UserService {
         return !userRepository.existsNickByOtherUser(nickname, currentUserId);
     }
 
+    @Transactional
+    public void deleteAvatar(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        if (user.getWithdrawalAt() != null) {
+            throw new CustomException(ErrorCode.WITHDRAWN_USER);
+        }
+        String url = user.getAvatarUrl();
+        if (url != null && url.startsWith("/avatars/")) {
+            String filename = url.substring("/avatars/".length());
+            try {
+                Files.deleteIfExists(Paths.get(uploadDir, "avatars", filename));
+            } catch (IOException ignored) { }
+        }
+        user.setAvatarUrl(null);
+        userRepository.save(user);
+    }
+
     private String extractExtension(String originalFilename) {
         if (originalFilename == null || !originalFilename.contains(".")) {
             return "";

@@ -89,29 +89,19 @@ class AuthControllerTest {
     }
 
     @Test
-    void 회원가입_비밀번호_7자_400() throws Exception {
-        mockMvc.perform(post("/api/auth/signup")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "email", "test@example.com",
-                                "password", "1234567",
-                                "nickname", "테스터"
-                        ))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
-    }
+    void 회원가입_짧고_단순한_비밀번호_허용_201() throws Exception {
+        // 비번 길이/숫자/특수문자 제한 제거됨: 짧고 단순한 비번도 가입 가능
+        given(authService.signup(any())).willReturn(authResponse("uid-1", "test@example.com", "테스터"));
 
-    @Test
-    void 회원가입_비밀번호_복잡도_부족_400() throws Exception {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
                                 "email", "test@example.com",
-                                "password", "password1",   // 특수문자 없음
+                                "password", "123",
                                 "nickname", "테스터"
                         ))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test

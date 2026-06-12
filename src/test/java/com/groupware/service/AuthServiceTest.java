@@ -73,7 +73,7 @@ class AuthServiceTest {
         given(userRepository.findById("test@example.com")).willReturn(Optional.empty());
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
-        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(anyString(), anyString())).willReturn("access-token");
 
         AuthResponse response = authService.signup(request);
 
@@ -90,7 +90,7 @@ class AuthServiceTest {
         given(userRepository.findById("test@example.com")).willReturn(Optional.empty());
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
-        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(anyString(), anyString())).willReturn("access-token");
 
         authService.signup(request);
 
@@ -126,7 +126,7 @@ class AuthServiceTest {
 
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
-        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(anyString(), anyString())).willReturn("access-token");
 
         AuthResponse response = authService.signup(request);
 
@@ -171,7 +171,7 @@ class AuthServiceTest {
         given(userRepository.existsByNickAndWithdrawalAtIsNull("굿닉")).willReturn(false);
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
-        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(anyString(), anyString())).willReturn("access-token");
 
         authService.signup(request);
 
@@ -193,7 +193,7 @@ class AuthServiceTest {
         given(userRepository.existsByNickAndWithdrawalAtIsNull("새닉")).willReturn(false);
         given(passwordEncoder.encode(anyString())).willReturn("encoded-pw");
         given(userRepository.save(any(User.class))).willAnswer(inv -> inv.getArgument(0));
-        given(jwtUtil.generateAccessToken(anyString())).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(anyString(), anyString())).willReturn("access-token");
 
         Query nativeQuery = mock(Query.class);
         given(entityManager.createNativeQuery(anyString())).willReturn(nativeQuery);
@@ -259,7 +259,7 @@ class AuthServiceTest {
         User user = buildUser("test@example.com", "encoded-pw", "테스터", null);
         given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("password123", "encoded-pw")).willReturn(true);
-        given(jwtUtil.generateAccessToken("test@example.com")).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(eq("test@example.com"), anyString())).willReturn("access-token");
 
         AuthResponse response = authService.login(request);
 
@@ -310,7 +310,7 @@ class AuthServiceTest {
         User user = buildUser("test@example.com", "encoded-pw", "테스터", null);
         given(valueOps.get("refresh:valid-refresh-token")).willReturn("test@example.com");
         given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
-        given(jwtUtil.generateAccessToken("test@example.com")).willReturn("new-access-token");
+        given(jwtUtil.generateAccessToken(eq("test@example.com"), anyString())).willReturn("new-access-token");
 
         AuthResponse response = authService.refresh("valid-refresh-token");
 
@@ -336,7 +336,7 @@ class AuthServiceTest {
         User user = buildUser("test@example.com", "encoded-pw", "테스터", null);
         given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("password123", "encoded-pw")).willReturn(true);
-        given(jwtUtil.generateAccessToken("test@example.com")).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(eq("test@example.com"), anyString())).willReturn("access-token");
         given(valueOps.get("user:test@example.com")).willReturn("old-refresh-token");
 
         authService.login(request);
@@ -352,7 +352,7 @@ class AuthServiceTest {
         User user = buildUser("test@example.com", "encoded-pw", "테스터", null);
         given(userRepository.findById("test@example.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("password123", "encoded-pw")).willReturn(true);
-        given(jwtUtil.generateAccessToken("test@example.com")).willReturn("access-token");
+        given(jwtUtil.generateAccessToken(eq("test@example.com"), anyString())).willReturn("access-token");
         given(valueOps.get("user:test@example.com")).willReturn(null);
 
         authService.login(request);

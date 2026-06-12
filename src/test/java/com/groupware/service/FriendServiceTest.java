@@ -231,6 +231,48 @@ class FriendServiceTest {
         assertThat(result.get(0).getStatus()).isEqualTo("PENDING");
     }
 
+    // ─── getSentRequests (qa 항목6) ───────────────────────────────────────
+
+    @Test
+    void 보낸_친구_요청_목록_조회() {
+        User me = buildUser("uid-1", "me@test.com", "나");
+        User target = buildUser("uid-2", "t@b.com", "대상");
+        Friend sent = buildFriend(5L, me, target, "PENDING");
+
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(friendRepository.findByUserAndStatus(me, "PENDING")).willReturn(List.of(sent));
+
+        List<FriendResponse> result = friendService.getSentRequests("uid-1");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getUserId()).isEqualTo("uid-2");
+        assertThat(result.get(0).getStatus()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void 보낸_요청_없으면_빈_목록() {
+        User me = buildUser("uid-1", "me@test.com", "나");
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(friendRepository.findByUserAndStatus(me, "PENDING")).willReturn(List.of());
+
+        assertThat(friendService.getSentRequests("uid-1")).isEmpty();
+    }
+
+    @Test
+    void 친구_응답에_avatarUrl_포함() {
+        User me = buildUser("uid-1", "me@test.com", "나");
+        User other = buildUser("uid-2", "a@b.com", "친구");
+        other.setAvatarUrl("/avatars/x.png");
+        Friend accepted = buildFriend(1L, me, other, "ACCEPTED");
+
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(friendRepository.findAcceptedFriends(me)).willReturn(List.of(accepted));
+
+        List<FriendResponse> result = friendService.getFriends("uid-1");
+
+        assertThat(result.get(0).getAvatarUrl()).isEqualTo("/avatars/x.png");
+    }
+
     // ─── getOnlineStatuses ────────────────────────────────────────────────
 
     @Test

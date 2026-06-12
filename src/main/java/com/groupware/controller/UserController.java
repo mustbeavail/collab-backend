@@ -56,6 +56,22 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.ok(Map.of("avatarUrl", avatarUrl)));
     }
 
+    @DeleteMapping("/me/avatar")
+    public ResponseEntity<ApiResponse<Void>> deleteAvatar(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        userService.deleteAvatar(userDetails.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok("프로필 사진이 제거되었습니다.", null));
+    }
+
+    // /{userId} 보다 먼저 매칭되도록(리터럴 경로 우선). 본인 제외 닉네임 중복 검사.
+    @GetMapping("/check-nickname")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> checkNickname(
+            @RequestParam String nickname,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        boolean available = userService.isNicknameAvailable(userDetails.getUsername(), nickname);
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("available", available)));
+    }
+
     @DeleteMapping("/me")
     public ResponseEntity<ApiResponse<Void>> withdraw(
             @AuthenticationPrincipal UserDetails userDetails) {

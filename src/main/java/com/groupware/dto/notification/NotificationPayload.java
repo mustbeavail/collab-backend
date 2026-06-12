@@ -16,4 +16,5 @@ public class NotificationPayload {
     private String nickname;
     private String email;
     private String status;
+    private String avatarUrl;
 }

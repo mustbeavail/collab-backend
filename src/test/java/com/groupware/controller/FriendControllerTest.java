@@ -140,6 +140,29 @@ class FriendControllerTest {
                 .andExpect(jsonPath("$.data[0].status").value("PENDING"));
     }
 
+    // ─── GET /api/friends/requests/sent (qa 항목6) ───────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 보낸_요청_목록_200() throws Exception {
+        given(friendService.getSentRequests("uid-1")).willReturn(List.of(
+                FriendResponse.builder().friendIdx(5L).userId("uid-2").nickname("대상")
+                        .email("t@test.com").status("PENDING").avatarUrl("/avatars/a.png").build()
+        ));
+
+        mockMvc.perform(get("/api/friends/requests/sent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].userId").value("uid-2"))
+                .andExpect(jsonPath("$.data[0].status").value("PENDING"))
+                .andExpect(jsonPath("$.data[0].avatarUrl").value("/avatars/a.png"));
+    }
+
+    @Test
+    void 보낸_요청_목록_미인증_401() throws Exception {
+        mockMvc.perform(get("/api/friends/requests/sent"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ─── PATCH /api/friends/{idx}/accept ─────────────────────────────────
 
     @Test

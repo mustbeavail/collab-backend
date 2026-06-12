@@ -185,11 +185,15 @@ class UserControllerTest {
 
     @Test
     @WithMockUser(username = "uid-1")
-    void 비밀번호_변경_새비밀번호_8자미만_400() throws Exception {
+    void 비밀번호_변경_짧은_새비밀번호_허용_200() throws Exception {
+        // 비번 길이/복잡도 제한 제거됨: 짧은 새 비번도 변경 가능
+        willDoNothing().given(userService).changePassword(eq("uid-1"), any(ChangePasswordRequest.class));
+
         mockMvc.perform(put("/api/users/me/password")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("currentPassword", "oldPass1!", "newPassword", "short"))))
-                .andExpect(status().isBadRequest());
+                        .content(json(Map.of("currentPassword", "oldPass1!", "newPassword", "123"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test
@@ -303,6 +307,55 @@ class UserControllerTest {
         mockMvc.perform(get("/api/users/uid-x"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ─── DELETE /api/users/me/avatar ──────────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 아바타_제거_200() throws Exception {
+        willDoNothing().given(userService).deleteAvatar("uid-1");
+
+        mockMvc.perform(delete("/api/users/me/avatar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("프로필 사진이 제거되었습니다."));
+    }
+
+    @Test
+    void 아바타_제거_미인증_401() throws Exception {
+        mockMvc.perform(delete("/api/users/me/avatar"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ─── GET /api/users/check-nickname ────────────────────────────────────
+    // 회귀방지: /{userId} 보다 먼저 매칭되어야 함(과거 /check-nickname 이 {userId}로 잡혀 USER_NOT_FOUND 발생)
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 닉네임_중복확인_사용가능_200() throws Exception {
+        given(userService.isNicknameAvailable("uid-1", "새닉네임")).willReturn(true);
+
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "새닉네임"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.available").value(true));
+    }
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 닉네임_중복확인_중복_200_available_false() throws Exception {
+        given(userService.isNicknameAvailable("uid-1", "중복닉")).willReturn(false);
+
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "중복닉"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.available").value(false));
+    }
+
+    @Test
+    void 닉네임_중복확인_미인증_401() throws Exception {
+        mockMvc.perform(get("/api/users/check-nickname").param("nickname", "닉"))
+                .andExpect(status().isUnauthorized());
     }
 
     private String json(Object obj) throws Exception {

@@ -14,6 +14,7 @@ public class FriendResponse {
     private String nickname;
     private String email;
     private String status;
+    private String avatarUrl;
 
     public static FriendResponse of(Friend f, User me) {
         User other = f.getUser().getUserId().equals(me.getUserId()) ? f.getFriend() : f.getUser();
@@ -23,6 +24,7 @@ public class FriendResponse {
                 .nickname(other.getNick())
                 .email(other.getUserId())
                 .status(f.getStatus())
+                .avatarUrl(other.getAvatarUrl())
                 .build();
     }
 }

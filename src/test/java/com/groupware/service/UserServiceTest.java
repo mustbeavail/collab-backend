@@ -334,6 +334,66 @@ class UserServiceTest {
                         .isEqualTo(ErrorCode.USER_NOT_FOUND));
     }
 
+    // ─── deleteAvatar ─────────────────────────────────────────────────────
+
+    @Test
+    void 아바타_제거_성공_avatarUrl_null로() {
+        User user = buildUser("uid-1", "test@test.com", "테스터", null, null);
+        user.setAvatarUrl("/avatars/some.jpg");
+        ReflectionTestUtils.setField(userService, "uploadDir", System.getProperty("java.io.tmpdir"));
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+
+        userService.deleteAvatar("uid-1");
+
+        assertThat(user.getAvatarUrl()).isNull();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void 아바타_제거_사진없어도_성공() {
+        User user = buildUser("uid-1", "test@test.com", "테스터", null, null);
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+
+        userService.deleteAvatar("uid-1");
+
+        assertThat(user.getAvatarUrl()).isNull();
+    }
+
+    @Test
+    void 아바타_제거_사용자없음_예외() {
+        given(userRepository.findById("none")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.deleteAvatar("none"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.USER_NOT_FOUND));
+    }
+
+    @Test
+    void 아바타_제거_탈퇴한_사용자_예외() {
+        User user = buildUser("uid-1", "test@test.com", "테스터", null, LocalDateTime.now());
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> userService.deleteAvatar("uid-1"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.WITHDRAWN_USER));
+    }
+
+    // ─── isNicknameAvailable ──────────────────────────────────────────────
+
+    @Test
+    void 닉네임_사용가능_본인제외_중복없음_true() {
+        given(userRepository.existsNickByOtherUser("새닉", "uid-1")).willReturn(false);
+        assertThat(userService.isNicknameAvailable("uid-1", "새닉")).isTrue();
+    }
+
+    @Test
+    void 닉네임_사용불가_다른유저가_사용중_false() {
+        given(userRepository.existsNickByOtherUser("중복닉", "uid-1")).willReturn(true);
+        assertThat(userService.isNicknameAvailable("uid-1", "중복닉")).isFalse();
+    }
+
     private ChangePasswordRequest buildChangePasswordRequest(String currentPassword, String newPassword) {
         ChangePasswordRequest req = new ChangePasswordRequest();
         ReflectionTestUtils.setField(req, "currentPassword", currentPassword);
