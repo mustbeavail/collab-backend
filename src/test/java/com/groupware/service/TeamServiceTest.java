@@ -13,11 +13,13 @@ import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.TeamRepository;
 import com.groupware.repository.UserRepository;
+import com.groupware.dto.notification.NotificationPayload;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -41,6 +44,7 @@ class TeamServiceTest {
     @Mock private ChatRoomRepository chatRoomRepository;
     @Mock private UserRepository userRepository;
     @Mock private RoomMemberRepository roomMemberRepository;
+    @Mock private SimpMessagingTemplate messagingTemplate;
 
     @Test
     void 내_팀_목록_정상_반환() {
@@ -277,6 +281,9 @@ class TeamServiceTest {
         teamService.inviteMember("uid-1", 1L, buildInviteRequest("uid-2"));
 
         verify(teamMemberRepository).save(any(TeamMember.class));
+        // 실시간 팀초대 알림 WS 전송(qa 항목12)
+        verify(messagingTemplate).convertAndSendToUser(
+                eq("uid-2"), eq("/queue/notifications"), any(NotificationPayload.class));
     }
 
     @Test
@@ -513,6 +520,44 @@ class TeamServiceTest {
                         .isEqualTo(ErrorCode.TEAM_NOT_FOUND));
     }
 
+    // ─── createChannel (qa 항목21) ─────────────────────────────────────────────
+
+    @Test
+    void 채널_생성_성공_생성자만_입장() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "생성자");
+        TeamMember member = buildTeamMember(team, user, "MEMBER");
+        ChatRoom created = buildChatRoom(20L, team, "새채널");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(member));
+        given(chatRoomRepository.save(any(ChatRoom.class))).willReturn(created);
+        given(roomMemberRepository.save(any(RoomMember.class))).willReturn(new RoomMember());
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(member));
+        given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of(created));
+        given(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(anyString(), anyList())).willReturn(List.of(20L));
+
+        teamService.createChannel("uid-1", 1L, buildCreateChannelRequest("새채널"));
+
+        // 생성자 RoomMember 1명만 저장(팀원 자동입장 안 함)
+        verify(roomMemberRepository, times(1)).save(any(RoomMember.class));
+        verify(chatRoomRepository).save(any(ChatRoom.class));
+    }
+
+    @Test
+    void 채널_생성_팀멤버_아님_예외() {
+        Team team = buildTeam(1L, "팀");
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(userRepository.findById("uid-x")).willReturn(Optional.of(buildUser("uid-x", "외부인")));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-x")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamService.createChannel("uid-x", 1L, buildCreateChannelRequest("ch")))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOT_TEAM_MEMBER));
+    }
+
     // ─── joinChannel ─────────────────────────────────────────────────────────
 
     @Test
@@ -570,6 +615,49 @@ class TeamServiceTest {
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.NOT_TEAM_MEMBER));
+    }
+
+    // ─── getTeamInfo (qa 항목20) + 멤버 정렬(qa 항목18) ────────────────────────
+
+    @Test
+    void 팀정보_조회_멤버_성공_그리고_멤버는_리더_매니저_멤버_순_정렬() {
+        Team team = buildTeam(1L, "팀");
+        TeamMember m1 = buildTeamMember(team, buildUser("u-mem", "멤버"), "MEMBER");
+        TeamMember m2 = buildTeamMember(team, buildUser("u-lead", "리더"), "LEADER");
+        TeamMember m3 = buildTeamMember(team, buildUser("u-mgr", "매니저"), "MANAGER");
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findCurrentByTeamIdxAndUserId(1L, "u-lead")).willReturn(Optional.of(m2));
+        // 일부러 뒤섞인 순서로 반환 → 서비스가 정렬해야 함
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(m1, m2, m3));
+        given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of());
+
+        TeamSidebarResponse result = teamService.getTeamInfo("u-lead", 1L);
+
+        assertThat(result.getMembers()).extracting(TeamMemberDto::getRole)
+                .containsExactly("LEADER", "MANAGER", "MEMBER");
+    }
+
+    @Test
+    void 팀정보_조회_멤버아님_예외() {
+        Team team = buildTeam(1L, "팀");
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findCurrentByTeamIdxAndUserId(1L, "uid-x")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamService.getTeamInfo("uid-x", 1L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOT_TEAM_MEMBER));
+    }
+
+    @Test
+    void 팀정보_조회_팀없음_예외() {
+        given(teamRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamService.getTeamInfo("uid-1", 99L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.TEAM_NOT_FOUND));
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -633,6 +721,12 @@ class TeamServiceTest {
     private ChangeRoleRequest buildChangeRoleRequest(String role) {
         ChangeRoleRequest req = new ChangeRoleRequest();
         ReflectionTestUtils.setField(req, "role", role);
+        return req;
+    }
+
+    private CreateChannelRequest buildCreateChannelRequest(String roomName) {
+        CreateChannelRequest req = new CreateChannelRequest();
+        ReflectionTestUtils.setField(req, "roomName", roomName);
         return req;
     }
 }

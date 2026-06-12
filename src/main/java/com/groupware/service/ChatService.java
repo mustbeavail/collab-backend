@@ -7,7 +7,9 @@ import com.groupware.domain.User;
 import com.groupware.dto.chat.ChatMessagePayload;
 import com.groupware.dto.chat.ChatRoomDetailResponse;
 import com.groupware.dto.chat.ChatRoomResponse;
+import com.groupware.dto.chat.DmRoomResponse;
 import com.groupware.dto.chat.InviteRequest;
+import com.groupware.dto.notification.NotificationPayload;
 import com.groupware.dto.chat.MessagePageResponse;
 import com.groupware.dto.chat.MessageResponse;
 import com.groupware.dto.chat.RoomMemberResponse;
@@ -101,8 +103,53 @@ public class ChatService {
 
         messagingTemplate.convertAndSend("/topic/room/" + roomIdx, payload);
 
+        // 미개방 방에도 알림 가도록 각 멤버 user-queue로 NEW_MESSAGE 푸시(qa 항목15: 알림 없던 문제)
+        notifyRoomMembers(room, user, msg.getContent());
+
         // 테스트봇이 참여한 DM이면 비동기로 답장 생성 (봇 자신의 메시지는 내부에서 무시)
         testBotService.maybeAutoReply(roomIdx, msg.getMsgIdx(), user.getUserId(), user.getNick(), msg.getContent());
+    }
+
+    private void notifyRoomMembers(ChatRoom room, User sender, String content) {
+        String preview = (content != null && content.length() > 50) ? content.substring(0, 50) : content;
+        roomMemberRepository.findAllActiveByRoom(room).stream()
+                .map(RoomMember::getUser)
+                .filter(u -> !u.getUserId().equals(sender.getUserId()))
+                .forEach(u -> messagingTemplate.convertAndSendToUser(
+                        u.getUserId(),
+                        "/queue/notifications",
+                        NotificationPayload.builder()
+                                .type("NEW_MESSAGE")
+                                .roomIdx(room.getRoomIdx())
+                                .userId(sender.getUserId())
+                                .nickname(sender.getNick())
+                                .content(preview)
+                                .build()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<DmRoomResponse> getMyDmRooms(String userId) {
+        User me = getActiveUser(userId);
+        return chatRoomRepository.findMyDmRooms(userId).stream().map(room -> {
+            List<RoomMember> members = roomMemberRepository.findAllActiveByRoom(room);
+            if (members.size() == 2) {
+                User other = members.stream().map(RoomMember::getUser)
+                        .filter(u -> !u.getUserId().equals(userId))
+                        .findFirst().orElse(me);
+                return DmRoomResponse.builder()
+                        .roomIdx(room.getRoomIdx())
+                        .name(other.getNick())
+                        .dm(true)
+                        .targetUserId(other.getUserId())
+                        .avatarUrl(other.getAvatarUrl())
+                        .build();
+            }
+            return DmRoomResponse.builder()
+                    .roomIdx(room.getRoomIdx())
+                    .name(room.getRoomName())
+                    .dm(false)
+                    .build();
+        }).toList();
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -144,16 +191,22 @@ public class ChatService {
     @Transactional
     public void inviteToRoom(String userId, Long roomIdx, InviteRequest request) {
         ChatRoom room = getActiveRoom(roomIdx);
-        if (room.getTeam() != null) {
-            throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
-        }
-
         User inviter = getActiveUser(userId);
-        if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, inviter)) {
-            throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
-        }
-
         User target = getActiveUser(request.getUserId());
+
+        if (room.getTeam() != null) {
+            // 팀 채널: 초대자/대상 모두 팀 멤버여야(qa 항목21 — 채널 초대는 팀 멤버만)
+            Long teamIdx = room.getTeam().getTeamIdx();
+            teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
+                    .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+            teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, target.getUserId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+        } else {
+            // DM/그룹: 초대자가 방 멤버여야(대상은 전체 유저 가능)
+            if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, inviter)) {
+                throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
+            }
+        }
 
         if (roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, target)) {
             return;

@@ -25,6 +25,14 @@ public class TeamController {
         return ResponseEntity.ok(ApiResponse.ok(teamService.getMyTeams(userDetails.getUsername())));
     }
 
+    // 팀 정보 조회(qa 항목20 — 초대 알림에서 팀 정보 보기). 멤버/초대받은 사용자만.
+    @GetMapping("/{teamIdx}/info")
+    public ResponseEntity<ApiResponse<TeamSidebarResponse>> getTeamInfo(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long teamIdx) {
+        return ResponseEntity.ok(ApiResponse.ok(teamService.getTeamInfo(userDetails.getUsername(), teamIdx)));
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<TeamSidebarResponse>> createTeam(
             @AuthenticationPrincipal UserDetails userDetails,
@@ -111,7 +119,17 @@ public class TeamController {
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
-    // ─── 채널 참여 ────────────────────────────────────────────────────────────────
+    // ─── 채널 생성/참여 ────────────────────────────────────────────────────────────────
+
+    // 팀 채널 추가(qa 항목21)
+    @PostMapping("/{teamIdx}/channels")
+    public ResponseEntity<ApiResponse<TeamSidebarResponse>> createChannel(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long teamIdx,
+            @Valid @RequestBody CreateChannelRequest request) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                teamService.createChannel(userDetails.getUsername(), teamIdx, request)));
+    }
 
     @PostMapping("/{teamIdx}/channels/{roomIdx}/join")
     public ResponseEntity<ApiResponse<TeamSidebarResponse>> joinChannel(

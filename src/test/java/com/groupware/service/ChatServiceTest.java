@@ -7,7 +7,10 @@ import com.groupware.domain.User;
 import com.groupware.dto.chat.ChatMessagePayload;
 import com.groupware.dto.chat.ChatRoomDetailResponse;
 import com.groupware.dto.chat.ChatRoomResponse;
+import com.groupware.dto.chat.DmRoomResponse;
 import com.groupware.dto.chat.InviteRequest;
+import com.groupware.dto.notification.NotificationPayload;
+import com.groupware.domain.Team;
 import com.groupware.dto.chat.MessagePageResponse;
 import com.groupware.dto.chat.UpdateRoomInfoRequest;
 import com.groupware.dto.chat.RoomMemberResponse;
@@ -39,7 +42,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -170,6 +175,82 @@ class ChatServiceTest {
         verify(messagingTemplate).convertAndSend(eq("/topic/room/1"), captor.capture());
         assertThat(captor.getValue().getContent()).isEqualTo("hi");
         assertThat(captor.getValue().getRoomIdx()).isEqualTo(1L);
+    }
+
+    @Test
+    void 메시지_전송_시_다른_멤버에게_NEW_MESSAGE_알림() {
+        SendMessageRequest req = new SendMessageRequest();
+        ReflectionTestUtils.setField(req, "content", "hi");
+        ReflectionTestUtils.setField(req, "msgType", "TEXT");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(messageRepository.save(any(Message.class))).willReturn(makeMsg(10L, "hi"));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(roomMember(userA), roomMember(userB)));
+
+        chatService.sendMessage("a@test.com", 1L, req);
+
+        // 발신자 제외 다른 멤버(b)에게만 NEW_MESSAGE 푸시
+        verify(messagingTemplate).convertAndSendToUser(eq("b@test.com"), eq("/queue/notifications"), any(NotificationPayload.class));
+        verify(messagingTemplate, never()).convertAndSendToUser(eq("a@test.com"), anyString(), any());
+    }
+
+    @Test
+    void 내_DM방_목록_DM과_그룹_구분() {
+        User userC = new User();
+        ReflectionTestUtils.setField(userC, "userId", "c@test.com");
+        ReflectionTestUtils.setField(userC, "nick", "Carol");
+
+        ChatRoom group = new ChatRoom();
+        ReflectionTestUtils.setField(group, "roomIdx", 2L);
+        ReflectionTestUtils.setField(group, "roomName", "그룹방");
+
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(chatRoomRepository.findMyDmRooms("a@test.com")).willReturn(List.of(room, group));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(roomMember(userA), roomMember(userB)));
+        given(roomMemberRepository.findAllActiveByRoom(group)).willReturn(List.of(roomMember(userA), roomMember(userB), roomMember(userC)));
+
+        List<DmRoomResponse> result = chatService.getMyDmRooms("a@test.com");
+
+        DmRoomResponse dm = result.stream().filter(r -> r.getRoomIdx() == 1L).findFirst().orElseThrow();
+        assertThat(dm.isDm()).isTrue();
+        assertThat(dm.getName()).isEqualTo("Bob");
+        assertThat(dm.getTargetUserId()).isEqualTo("b@test.com");
+
+        DmRoomResponse g = result.stream().filter(r -> r.getRoomIdx() == 2L).findFirst().orElseThrow();
+        assertThat(g.isDm()).isFalse();
+        assertThat(g.getName()).isEqualTo("그룹방");
+    }
+
+    @Test
+    void 팀채널_초대_팀멤버_성공() {
+        Team team = new Team();
+        ReflectionTestUtils.setField(team, "teamIdx", 7L);
+        ChatRoom teamRoom = new ChatRoom();
+        ReflectionTestUtils.setField(teamRoom, "roomIdx", 9L);
+        ReflectionTestUtils.setField(teamRoom, "team", team);
+
+        InviteRequest req = new InviteRequest();
+        ReflectionTestUtils.setField(req, "userId", "b@test.com");
+
+        given(chatRoomRepository.findById(9L)).willReturn(Optional.of(teamRoom));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(new com.groupware.domain.TeamMember()));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "b@test.com")).willReturn(Optional.of(new com.groupware.domain.TeamMember()));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(teamRoom, userB)).willReturn(false);
+
+        chatService.inviteToRoom("a@test.com", 9L, req);
+
+        verify(roomMemberRepository).save(any(RoomMember.class));
+    }
+
+    private RoomMember roomMember(User u) {
+        RoomMember rm = new RoomMember();
+        ReflectionTestUtils.setField(rm, "user", u);
+        ReflectionTestUtils.setField(rm, "role", "MEMBER");
+        return rm;
     }
 
     @Test

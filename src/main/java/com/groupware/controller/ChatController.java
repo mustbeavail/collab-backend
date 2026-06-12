@@ -2,6 +2,7 @@ package com.groupware.controller;
 
 import com.groupware.dto.chat.ChatRoomDetailResponse;
 import com.groupware.dto.chat.ChatRoomResponse;
+import com.groupware.dto.chat.DmRoomResponse;
 import com.groupware.dto.chat.InviteRequest;
 import com.groupware.dto.chat.MessagePageResponse;
 import com.groupware.dto.chat.RoomMemberResponse;
@@ -23,6 +24,13 @@ import java.util.List;
 public class ChatController {
 
     private final ChatService chatService;
+
+    // 내 DM/그룹 채팅방 목록(qa 항목15)
+    @GetMapping("/rooms/my")
+    public ResponseEntity<ApiResponse<List<DmRoomResponse>>> getMyDmRooms(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.ok(chatService.getMyDmRooms(userDetails.getUsername())));
+    }
 
     @GetMapping("/rooms/{roomIdx}")
     public ResponseEntity<ApiResponse<ChatRoomDetailResponse>> getRoomInfo(

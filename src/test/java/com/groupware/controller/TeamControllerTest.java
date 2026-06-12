@@ -70,6 +70,28 @@ class TeamControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ─── GET /api/teams/{teamIdx}/info (qa 항목20) ────────────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 팀_정보_조회_200() throws Exception {
+        TeamSidebarResponse response = TeamSidebarResponse.builder()
+                .teamIdx(1L).teamName("Team Alpha").myRole("MEMBER")
+                .channels(List.of()).members(List.of(new TeamMemberDto("uid-1", "홍길동", "MEMBER")))
+                .build();
+        given(teamService.getTeamInfo("uid-1", 1L)).willReturn(response);
+
+        mockMvc.perform(get("/api/teams/1/info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.teamName").value("Team Alpha"));
+    }
+
+    @Test
+    void 팀_정보_조회_미인증_401() throws Exception {
+        mockMvc.perform(get("/api/teams/1/info"))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     @WithMockUser(username = "uid-1")
     void 소속_팀_없을_때_빈_배열_200() throws Exception {
@@ -80,6 +102,33 @@ class TeamControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    // ─── POST /api/teams/{teamIdx}/channels (qa 항목21) ───────────────────────
+
+    @Test
+    @WithMockUser(username = "uid-1")
+    void 채널_생성_200() throws Exception {
+        TeamSidebarResponse response = TeamSidebarResponse.builder()
+                .teamIdx(1L).teamName("팀").myRole("LEADER")
+                .channels(List.of(new TeamChannelDto(5L, "새채널", true)))
+                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
+                .build();
+        given(teamService.createChannel(eq("uid-1"), eq(1L), any(CreateChannelRequest.class))).willReturn(response);
+
+        mockMvc.perform(post("/api/teams/1/channels").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomName\":\"새채널\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.channels[0].roomName").value("새채널"));
+    }
+
+    @Test
+    void 채널_생성_미인증_401() throws Exception {
+        mockMvc.perform(post("/api/teams/1/channels").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomName\":\"x\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     // ─── POST /api/teams ──────────────────────────────────────────────────────

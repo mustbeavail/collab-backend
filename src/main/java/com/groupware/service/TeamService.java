@@ -13,7 +13,9 @@ import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.TeamRepository;
 import com.groupware.repository.UserRepository;
+import com.groupware.dto.notification.NotificationPayload;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ public class TeamService {
     private final ChatRoomRepository chatRoomRepository;
     private final UserRepository userRepository;
     private final RoomMemberRepository roomMemberRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Transactional(readOnly = true)
     public List<TeamSidebarResponse> getMyTeams(String userId) {
@@ -144,6 +147,31 @@ public class TeamService {
         invitation.setRole("MEMBER");
         invitation.setStatus("PENDING");
         teamMemberRepository.save(invitation);
+
+        // 실시간 팀초대 알림(qa 항목12) — 대상에게 WS 푸시(새로고침 없이 알림벨 반영)
+        messagingTemplate.convertAndSendToUser(
+                targetUserId,
+                "/queue/notifications",
+                NotificationPayload.builder()
+                        .type("TEAM_INVITE")
+                        .tmIdx(invitation.getTmIdx())
+                        .teamIdx(team.getTeamIdx())
+                        .teamName(team.getTeamName())
+                        .build()
+        );
+    }
+
+    // 팀 정보 조회(qa 항목20) — 멤버이거나 대기중 초대를 받은 사용자만(초대 알림에서 팀 정보 보기)
+    @Transactional(readOnly = true)
+    public TeamSidebarResponse getTeamInfo(String userId, Long teamIdx) {
+        Team team = teamRepository.findById(teamIdx)
+                .filter(t -> t.getDelAt() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.TEAM_NOT_FOUND));
+        // findCurrent: exitAt null인 멤버십(PENDING 초대 포함)
+        if (teamMemberRepository.findCurrentByTeamIdxAndUserId(teamIdx, userId).isEmpty()) {
+            throw new CustomException(ErrorCode.NOT_TEAM_MEMBER);
+        }
+        return toSidebarResponse(team, userId);
     }
 
     @Transactional(readOnly = true)
@@ -275,6 +303,38 @@ public class TeamService {
         teamMemberRepository.save(member);
     }
 
+    // ─── 채널 생성 ────────────────────────────────────────────────────────────────
+
+    // 팀 채팅방(채널) 추가(qa 항목21). 생성자만 입장시킴(팀 가입 유저 자동입장 차단).
+    @Transactional
+    public TeamSidebarResponse createChannel(String userId, Long teamIdx, CreateChannelRequest request) {
+        Team team = teamRepository.findById(teamIdx)
+                .filter(t -> t.getDelAt() == null)
+                .orElseThrow(() -> new CustomException(ErrorCode.TEAM_NOT_FOUND));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+
+        ChatRoom room = new ChatRoom();
+        room.setTeam(team);
+        room.setRoomName(request.getRoomName());
+        room.setCreatedAt(LocalDateTime.now());
+        room = chatRoomRepository.save(room);
+
+        // 생성자만 RoomMember로 등록(나머지 팀원은 '참여' 버튼으로 직접 입장)
+        RoomMember owner = new RoomMember();
+        owner.setChatRoom(room);
+        owner.setUser(user);
+        owner.setRole("OWNER");
+        owner.setJoinAt(LocalDateTime.now());
+        roomMemberRepository.save(owner);
+
+        return toSidebarResponse(team, userId);
+    }
+
     // ─── 채널 참여 ────────────────────────────────────────────────────────────────
 
     @Transactional
@@ -335,6 +395,8 @@ public class TeamService {
                         .map(ch -> new TeamChannelDto(ch.getRoomIdx(), ch.getRoomName(), joined.contains(ch.getRoomIdx())))
                         .toList())
                 .members(members.stream()
+                        // 리더 → 매니저 → 멤버 순 정렬(qa 항목18)
+                        .sorted(java.util.Comparator.comparingInt((TeamMember m) -> rolePriority(m.getRole())).reversed())
                         .map(m -> new TeamMemberDto(m.getUser().getUserId(), m.getUser().getNick(), m.getRole()))
                         .toList())
                 .build();

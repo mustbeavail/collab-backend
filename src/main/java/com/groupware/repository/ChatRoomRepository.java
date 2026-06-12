@@ -25,4 +25,9 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
     @Query("SELECT DISTINCT rm.chatRoom FROM RoomMember rm WHERE rm.user.userId = :userId AND rm.exitAt IS NULL " +
            "AND rm.chatRoom.delDate IS NULL AND rm.chatRoom.roomName LIKE %:q%")
     List<ChatRoom> searchRoomsByUser(@Param("userId") String userId, @Param("q") String q);
+
+    // 내 DM/그룹(비팀) 채팅방 목록(qa 항목15)
+    @Query("SELECT DISTINCT rm.chatRoom FROM RoomMember rm WHERE rm.user.userId = :userId AND rm.exitAt IS NULL " +
+           "AND rm.chatRoom.team IS NULL AND rm.chatRoom.delDate IS NULL")
+    List<ChatRoom> findMyDmRooms(@Param("userId") String userId);
 }
