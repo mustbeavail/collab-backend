@@ -9,6 +9,7 @@ import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Component;
@@ -48,6 +49,10 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
             }
             String userId = jwtUtil.getUserId(token);
             accessor.setUser(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+            // 인바운드 CONNECT 메시지가 immutable이면 setUser가 원본 메시지에 반영되지 않아
+            // SessionConnectedEvent·SimpUserRegistry에 Principal이 등록되지 않는다(=convertAndSendToUser 라우팅 실패).
+            // accessor 헤더를 다시 실어 새 메시지로 반환해 Principal 전파를 보장한다.
+            return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
         }
 
         if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
