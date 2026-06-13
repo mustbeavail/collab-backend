@@ -44,10 +44,11 @@ public class Schedule {
     @Column(name = "location", length = 100)
     private String location;
 
-    @Column(name = "lat", precision = 10, scale = 8)
+    // 위도 ±90, 경도 ±180 — 정수부 3자리 필요(경도)하므로 precision 11, scale 8
+    @Column(name = "lat", precision = 11, scale = 8)
     private BigDecimal lat;
 
-    @Column(name = "longt", precision = 10, scale = 8)
+    @Column(name = "longt", precision = 11, scale = 8)
     private BigDecimal longt;
 
     @Column(name = "created_at", updatable = false)
