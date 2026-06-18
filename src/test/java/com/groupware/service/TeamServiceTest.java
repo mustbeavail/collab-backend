@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -45,6 +46,7 @@ class TeamServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private RoomMemberRepository roomMemberRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private com.groupware.websocket.WebSocketEventListener wsEventListener;
 
     @Test
     void 내_팀_목록_정상_반환() {
@@ -518,6 +520,80 @@ class TeamServiceTest {
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.TEAM_NOT_FOUND));
+    }
+
+    @Test
+    void 팀_나가기시_팀_채팅방에서_일괄_탈퇴() {
+        Team team = buildTeam(1L, "팀");
+        User user = buildUser("uid-1", "멤버");
+        TeamMember member = buildTeamMember(team, user, "MEMBER");
+        ChatRoom room = buildChatRoom(10L, team, "general");
+        RoomMember rm = new RoomMember();
+        rm.setChatRoom(room);
+        rm.setUser(user);
+
+        given(teamRepository.findById(1L)).willReturn(Optional.of(team));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(1L, "uid-1")).willReturn(Optional.of(member));
+        given(teamMemberRepository.save(any(TeamMember.class))).willReturn(member);
+        given(chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(1L)).willReturn(List.of(room));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(Optional.of(rm));
+
+        teamService.leaveTeam("uid-1", 1L);
+
+        assertThat(member.getExitAt()).isNotNull();
+        assertThat(rm.getExitAt()).isNotNull();          // 팀 채팅방 멤버십도 정리됨(버그 항목22)
+        verify(roomMemberRepository).save(rm);
+    }
+
+    // ─── reassignLeadershipForWithdrawnUser (추가2) ───────────────────────────
+    @Test
+    void 리더_탈퇴_자동위임_매니저_우선() {
+        Team team = buildTeam(1L, "팀");
+        TeamMember lead = buildTeamMember(team, buildUser("uid-L", "리더"), "LEADER");
+        TeamMember mgr = buildTeamMember(team, buildUser("uid-M", "매니저"), "MANAGER");
+        mgr.setJoinAt(LocalDateTime.now().minusDays(1));
+        TeamMember mem = buildTeamMember(team, buildUser("uid-A", "멤버"), "MEMBER");
+        mem.setJoinAt(LocalDateTime.now().minusDays(5)); // 더 먼저 들어왔어도 역할 우선순위가 앞섬
+
+        given(teamMemberRepository.findActiveLeaderMembershipsByUserId("uid-L")).willReturn(List.of(lead));
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(lead, mgr, mem));
+
+        teamService.reassignLeadershipForWithdrawnUser("uid-L");
+
+        assertThat(mgr.getRole()).isEqualTo("LEADER");
+        assertThat(lead.getExitAt()).isNotNull();
+    }
+
+    @Test
+    void 리더_탈퇴_자동위임_동순위는_먼저들어온사람() {
+        Team team = buildTeam(1L, "팀");
+        TeamMember lead = buildTeamMember(team, buildUser("uid-L", "리더"), "LEADER");
+        TeamMember a = buildTeamMember(team, buildUser("uid-A", "A"), "MEMBER");
+        a.setJoinAt(LocalDateTime.now().minusDays(2));
+        TeamMember b = buildTeamMember(team, buildUser("uid-B", "B"), "MEMBER");
+        b.setJoinAt(LocalDateTime.now().minusDays(10)); // 더 먼저 들어옴
+
+        given(teamMemberRepository.findActiveLeaderMembershipsByUserId("uid-L")).willReturn(List.of(lead));
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(lead, a, b));
+
+        teamService.reassignLeadershipForWithdrawnUser("uid-L");
+
+        assertThat(b.getRole()).isEqualTo("LEADER");
+        assertThat(a.getRole()).isEqualTo("MEMBER");
+    }
+
+    @Test
+    void 리더_탈퇴_남은멤버없으면_팀_소프트삭제() {
+        Team team = buildTeam(1L, "팀");
+        TeamMember lead = buildTeamMember(team, buildUser("uid-L", "리더"), "LEADER");
+
+        given(teamMemberRepository.findActiveLeaderMembershipsByUserId("uid-L")).willReturn(List.of(lead));
+        given(teamMemberRepository.findActiveByTeamIdx(1L)).willReturn(List.of(lead));
+
+        teamService.reassignLeadershipForWithdrawnUser("uid-L");
+
+        assertThat(team.getDelAt()).isNotNull();
+        assertThat(lead.getExitAt()).isNotNull();
     }
 
     // ─── createChannel (qa 항목21) ─────────────────────────────────────────────

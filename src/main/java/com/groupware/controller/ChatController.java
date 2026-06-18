@@ -84,6 +84,15 @@ public class ChatController {
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
+    // 팀 채팅방 삭제(팀 LEADER만)
+    @DeleteMapping("/rooms/{roomIdx}")
+    public ResponseEntity<ApiResponse<Void>> deleteRoom(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long roomIdx) {
+        chatService.deleteRoom(userDetails.getUsername(), roomIdx);
+        return ResponseEntity.ok(ApiResponse.ok(null));
+    }
+
     @DeleteMapping("/rooms/{roomIdx}/members/{targetUserId}")
     public ResponseEntity<ApiResponse<Void>> kick(
             @AuthenticationPrincipal UserDetails userDetails,

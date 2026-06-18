@@ -34,6 +34,7 @@ class UserServiceTest {
     @InjectMocks private UserService userService;
     @Mock private UserRepository userRepository;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private TeamService teamService;
 
     @Test
     void 내_프로필_조회_성공() {
@@ -182,6 +183,21 @@ class UserServiceTest {
                 .isInstanceOf(CustomException.class)
                 .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
                         .isEqualTo(ErrorCode.WRONG_CURRENT_PASSWORD));
+    }
+
+    @Test
+    void 비밀번호_변경_새비밀번호가_현재와_동일_예외() {
+        User user = buildUser("uid-1", "test@test.com", "테스터", null, null);
+        user.setPw("encoded_old");
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(user));
+        // 현재 비밀번호 일치 + 새 비밀번호도 같은 값이라 기존 해시와 매칭됨
+        given(passwordEncoder.matches("samePass1!", "encoded_old")).willReturn(true);
+
+        assertThatThrownBy(() -> userService.changePassword("uid-1", buildChangePasswordRequest("samePass1!", "samePass1!")))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SAME_AS_CURRENT_PASSWORD));
+        verify(userRepository, never()).save(any());
     }
 
     @Test

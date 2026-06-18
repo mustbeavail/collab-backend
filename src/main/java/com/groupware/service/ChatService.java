@@ -3,6 +3,7 @@ package com.groupware.service;
 import com.groupware.domain.ChatRoom;
 import com.groupware.domain.Message;
 import com.groupware.domain.RoomMember;
+import com.groupware.domain.TeamMember;
 import com.groupware.domain.User;
 import com.groupware.dto.chat.ChatMessagePayload;
 import com.groupware.dto.chat.ChatRoomDetailResponse;
@@ -159,9 +160,12 @@ public class ChatService {
         User target = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
-        return chatRoomRepository.findDmRoom(me, target)
-                .map(ChatRoomResponse::from)
-                .orElseGet(() -> ChatRoomResponse.from(createDmRoom(me, target)));
+        // 두 사람이 이미 같이 있는 비팀 채팅방이 있으면 재사용(1:1 우선), 없을 때만 생성(버그 항목27)
+        List<ChatRoom> shared = chatRoomRepository.findSharedNonTeamRooms(me, target);
+        if (!shared.isEmpty()) {
+            return ChatRoomResponse.from(shared.get(0));
+        }
+        return ChatRoomResponse.from(createDmRoom(me, target));
     }
 
     @Transactional(readOnly = true)
@@ -170,18 +174,7 @@ public class ChatService {
         User user = getActiveUser(userId);
         checkAccess(room, user);
 
-        if (room.getTeam() != null) {
-            return teamMemberRepository.findActiveByTeamIdx(room.getTeam().getTeamIdx())
-                    .stream()
-                    .map(tm -> RoomMemberResponse.builder()
-                            .userId(tm.getUser().getUserId())
-                            .nickname(tm.getUser().getNick())
-                            .avatarUrl(tm.getUser().getAvatarUrl())
-                            .role(tm.getRole())
-                            .build())
-                    .toList();
-        }
-
+        // 팀방/일반방 구분 없이 실제 참가 멤버만 반환(제대로안된것1: 팀원 전체가 멤버로 뜨던 문제)
         return roomMemberRepository.findAllActiveByRoom(room)
                 .stream()
                 .map(RoomMemberResponse::from)
@@ -195,10 +188,13 @@ public class ChatService {
         User target = getActiveUser(request.getUserId());
 
         if (room.getTeam() != null) {
-            // 팀 채널: 초대자/대상 모두 팀 멤버여야(qa 항목21 — 채널 초대는 팀 멤버만)
+            // 팀 채팅방: 초대는 권한자(LEADER/MANAGER)만, 대상은 팀 멤버여야(버그 항목17)
             Long teamIdx = room.getTeam().getTeamIdx();
-            teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
+            TeamMember inviterMember = teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, userId)
                     .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+            if ("MEMBER".equals(inviterMember.getRole())) {
+                throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
+            }
             teamMemberRepository.findActiveByTeamIdxAndUserId(teamIdx, target.getUserId())
                     .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
         } else {
@@ -222,11 +218,8 @@ public class ChatService {
 
     @Transactional
     public void leaveRoom(String userId, Long roomIdx) {
+        // 채팅방 일원화: 팀 채팅방도 일반 채팅방과 동일하게 나가기 허용(버그 항목16/26)
         ChatRoom room = getActiveRoom(roomIdx);
-        if (room.getTeam() != null) {
-            throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
-        }
-
         User user = getActiveUser(userId);
 
         RoomMember member = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
@@ -234,6 +227,24 @@ public class ChatService {
 
         member.setExitAt(LocalDateTime.now());
         roomMemberRepository.save(member);
+    }
+
+    /** 팀 채팅방 삭제(소프트). 팀 LEADER만 가능. */
+    @Transactional
+    public void deleteRoom(String userId, Long roomIdx) {
+        ChatRoom room = getActiveRoom(roomIdx);
+        if (room.getTeam() == null) {
+            // 팀 채팅방만 삭제 대상(일반/DM은 나가기로 처리)
+            throw new CustomException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+        TeamMember member = teamMemberRepository
+                .findActiveByTeamIdxAndUserId(room.getTeam().getTeamIdx(), userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
+        if (!"LEADER".equals(member.getRole())) {
+            throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
+        }
+        room.setDelDate(LocalDateTime.now());
+        chatRoomRepository.save(room);
     }
 
     @Transactional
@@ -302,13 +313,9 @@ public class ChatService {
     }
 
     private void checkAccess(ChatRoom room, User user) {
-        if (room.getTeam() != null) {
-            teamMemberRepository.findActiveByTeamIdxAndUserId(room.getTeam().getTeamIdx(), user.getUserId())
-                    .orElseThrow(() -> new CustomException(ErrorCode.NOT_TEAM_MEMBER));
-        } else {
-            if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)) {
-                throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
-            }
+        // 채팅방 일원화: 팀방도 실제 방 멤버만 접근(팀원이어도 미참가면 입장 불가, 버그 항목17/제대로안된것1)
+        if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)) {
+            throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
         }
     }
 

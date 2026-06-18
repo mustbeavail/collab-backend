@@ -27,6 +27,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TeamService teamService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -71,6 +72,10 @@ public class UserService {
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPw())) {
             throw new CustomException(ErrorCode.WRONG_CURRENT_PASSWORD);
         }
+        // 새 비밀번호가 현재 비밀번호와 동일하면 변경 차단
+        if (passwordEncoder.matches(request.getNewPassword(), user.getPw())) {
+            throw new CustomException(ErrorCode.SAME_AS_CURRENT_PASSWORD);
+        }
         user.setPw(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
     }
@@ -82,6 +87,8 @@ public class UserService {
         if (user.getWithdrawalAt() != null) {
             throw new CustomException(ErrorCode.WITHDRAWN_USER);
         }
+        // 탈퇴 전, 리더로 있는 팀의 리더권 자동 위임(추가2)
+        teamService.reassignLeadershipForWithdrawnUser(userId);
         user.setWithdrawalAt(LocalDateTime.now());
         // 닉네임 해제 → 탈퇴 회원의 닉네임을 다른 사용자가 재사용 가능
         // (DB UNIQUE(nick)는 NULL 다중 허용이므로 탈퇴 회원끼리 충돌 없음)

@@ -22,6 +22,16 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
         """)
     Optional<ChatRoom> findDmRoom(@Param("u1") User u1, @Param("u2") User u2);
 
+    // 두 사용자가 모두 속한 비팀 채팅방(멤버수 적은 순=1:1 우선). 기존 방 재사용으로 중복 생성 방지(버그 항목27)
+    @Query("""
+        SELECT r FROM ChatRoom r
+        WHERE r.team IS NULL AND r.delDate IS NULL
+          AND EXISTS (SELECT m FROM RoomMember m WHERE m.chatRoom = r AND m.user = :u1 AND m.exitAt IS NULL)
+          AND EXISTS (SELECT m FROM RoomMember m WHERE m.chatRoom = r AND m.user = :u2 AND m.exitAt IS NULL)
+        ORDER BY (SELECT COUNT(m) FROM RoomMember m WHERE m.chatRoom = r AND m.exitAt IS NULL) ASC, r.roomIdx ASC
+        """)
+    List<ChatRoom> findSharedNonTeamRooms(@Param("u1") User u1, @Param("u2") User u2);
+
     @Query("SELECT DISTINCT rm.chatRoom FROM RoomMember rm WHERE rm.user.userId = :userId AND rm.exitAt IS NULL " +
            "AND rm.chatRoom.delDate IS NULL AND rm.chatRoom.roomName LIKE %:q%")
     List<ChatRoom> searchRoomsByUser(@Param("userId") String userId, @Param("q") String q);

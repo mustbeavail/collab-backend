@@ -257,7 +257,7 @@ class ChatServiceTest {
     void DM방_없으면_새로_생성() {
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
-        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.empty());
+        given(chatRoomRepository.findSharedNonTeamRooms(userA, userB)).willReturn(List.of());
 
         ChatRoom newRoom = new ChatRoom();
         ReflectionTestUtils.setField(newRoom, "roomIdx", 5L);
@@ -302,6 +302,77 @@ class ChatServiceTest {
         chatService.inviteToRoom("a@test.com", 1L, req);
 
         verify(roomMemberRepository).save(any(RoomMember.class));
+    }
+
+    @Test
+    void 팀채팅방_초대_일반멤버는_권한없음() {
+        com.groupware.domain.Team team = new com.groupware.domain.Team();
+        ReflectionTestUtils.setField(team, "teamIdx", 7L);
+        ChatRoom teamRoom = new ChatRoom();
+        ReflectionTestUtils.setField(teamRoom, "roomIdx", 2L);
+        ReflectionTestUtils.setField(teamRoom, "team", team);
+
+        InviteRequest req = new InviteRequest();
+        ReflectionTestUtils.setField(req, "userId", "b@test.com");
+
+        given(chatRoomRepository.findById(2L)).willReturn(Optional.of(teamRoom));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
+        com.groupware.domain.TeamMember inviter = new com.groupware.domain.TeamMember();
+        ReflectionTestUtils.setField(inviter, "role", "MEMBER");
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(inviter));
+
+        // 팀 채팅방 초대는 권한자(LEADER/MANAGER)만(버그 항목17)
+        assertThatThrownBy(() -> chatService.inviteToRoom("a@test.com", 2L, req))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void 팀채팅방_삭제_리더_성공() {
+        com.groupware.domain.Team team = new com.groupware.domain.Team();
+        ReflectionTestUtils.setField(team, "teamIdx", 7L);
+        ChatRoom teamRoom = new ChatRoom();
+        ReflectionTestUtils.setField(teamRoom, "roomIdx", 2L);
+        ReflectionTestUtils.setField(teamRoom, "team", team);
+
+        given(chatRoomRepository.findById(2L)).willReturn(Optional.of(teamRoom));
+        com.groupware.domain.TeamMember leader = new com.groupware.domain.TeamMember();
+        ReflectionTestUtils.setField(leader, "role", "LEADER");
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(leader));
+        given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> inv.getArgument(0));
+
+        chatService.deleteRoom("a@test.com", 2L);
+
+        assertThat(teamRoom.getDelDate()).isNotNull();
+    }
+
+    @Test
+    void 팀채팅방_삭제_리더아니면_예외() {
+        com.groupware.domain.Team team = new com.groupware.domain.Team();
+        ReflectionTestUtils.setField(team, "teamIdx", 7L);
+        ChatRoom teamRoom = new ChatRoom();
+        ReflectionTestUtils.setField(teamRoom, "roomIdx", 2L);
+        ReflectionTestUtils.setField(teamRoom, "team", team);
+
+        given(chatRoomRepository.findById(2L)).willReturn(Optional.of(teamRoom));
+        com.groupware.domain.TeamMember mgr = new com.groupware.domain.TeamMember();
+        ReflectionTestUtils.setField(mgr, "role", "MANAGER");
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(mgr));
+
+        assertThatThrownBy(() -> chatService.deleteRoom("a@test.com", 2L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void 일반채팅방_삭제_불가() {
+        // 팀이 없는 방은 삭제 대상 아님(나가기로 처리)
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> chatService.deleteRoom("a@test.com", 1L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
     @Test
@@ -429,10 +500,10 @@ class ChatServiceTest {
 
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
-        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.of(existing));
+        given(chatRoomRepository.findSharedNonTeamRooms(userA, userB)).willReturn(List.of(existing));
 
         ChatRoomResponse resp = chatService.getOrCreateDmRoom("a@test.com", "b@test.com");
 
-        assertThat(resp.getRoomIdx()).isEqualTo(3L);
+        assertThat(resp.getRoomIdx()).isEqualTo(3L);  // 기존 방 재사용(중복 생성 안 함, 버그 항목27)
     }
 }

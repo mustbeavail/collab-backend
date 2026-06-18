@@ -14,6 +14,7 @@ import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.TeamRepository;
 import com.groupware.repository.UserRepository;
 import com.groupware.dto.notification.NotificationPayload;
+import com.groupware.websocket.WebSocketEventListener;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class TeamService {
     private final UserRepository userRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final WebSocketEventListener wsEventListener;
 
     @Transactional(readOnly = true)
     public List<TeamSidebarResponse> getMyTeams(String userId) {
@@ -248,6 +250,9 @@ public class TeamService {
 
         target.setExitAt(LocalDateTime.now());
         teamMemberRepository.save(target);
+
+        // 추방된 멤버도 팀 채팅방 전부에서 나가게(버그 항목22 일관성)
+        exitAllTeamRooms(teamIdx, target.getUser());
     }
 
     // ─── 역할 변경 ──────────────────────────────────────────────────────────────
@@ -301,6 +306,51 @@ public class TeamService {
 
         member.setExitAt(LocalDateTime.now());
         teamMemberRepository.save(member);
+
+        // 팀에서 나가면 참여 중이던 팀 채팅방 전부에서 일괄 탈퇴(버그 항목22)
+        exitAllTeamRooms(teamIdx, member.getUser());
+    }
+
+    /**
+     * 회원 탈퇴 시 그가 LEADER인 팀들의 리더권을 자동 위임(추가2).
+     * 우선순위: MANAGER → MEMBER, 동순위면 먼저 들어온 사람(joinAt 빠른 순). 남은 멤버 없으면 팀 소프트 삭제.
+     */
+    @Transactional
+    public void reassignLeadershipForWithdrawnUser(String userId) {
+        List<TeamMember> leaderships = teamMemberRepository.findActiveLeaderMembershipsByUserId(userId);
+        for (TeamMember lead : leaderships) {
+            Long teamIdx = lead.getTeam().getTeamIdx();
+            List<TeamMember> candidates = teamMemberRepository.findActiveByTeamIdx(teamIdx).stream()
+                    .filter(m -> !m.getUser().getUserId().equals(userId))
+                    .sorted(java.util.Comparator
+                            .comparingInt((TeamMember m) -> rolePriority(m.getRole())).reversed()
+                            .thenComparing(TeamMember::getJoinAt,
+                                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                    .toList();
+            if (candidates.isEmpty()) {
+                lead.getTeam().setDelAt(LocalDateTime.now());
+                teamRepository.save(lead.getTeam());
+            } else {
+                TeamMember successor = candidates.get(0);
+                successor.setRole("LEADER");
+                teamMemberRepository.save(successor);
+            }
+            lead.setExitAt(LocalDateTime.now());
+            teamMemberRepository.save(lead);
+            exitAllTeamRooms(teamIdx, lead.getUser());
+        }
+    }
+
+    /** 사용자를 해당 팀의 모든 채팅방 멤버십에서 나가게 한다(팀 탈퇴/추방 시 사용). */
+    private void exitAllTeamRooms(Long teamIdx, User user) {
+        List<ChatRoom> rooms = chatRoomRepository.findByTeamTeamIdxAndDelDateIsNull(teamIdx);
+        for (ChatRoom room : rooms) {
+            roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
+                    .ifPresent(rm -> {
+                        rm.setExitAt(LocalDateTime.now());
+                        roomMemberRepository.save(rm);
+                    });
+        }
     }
 
     // ─── 채널 생성 ────────────────────────────────────────────────────────────────
@@ -397,7 +447,12 @@ public class TeamService {
                 .members(members.stream()
                         // 리더 → 매니저 → 멤버 순 정렬(qa 항목18)
                         .sorted(java.util.Comparator.comparingInt((TeamMember m) -> rolePriority(m.getRole())).reversed())
-                        .map(m -> new TeamMemberDto(m.getUser().getUserId(), m.getUser().getNick(), m.getRole()))
+                        .map(m -> new TeamMemberDto(
+                                m.getUser().getUserId(),
+                                m.getUser().getNick(),
+                                m.getRole(),
+                                m.getUser().getAvatarUrl(),
+                                wsEventListener.isOnline(m.getUser().getUserId())))
                         .toList())
                 .build();
     }

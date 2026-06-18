@@ -11,7 +11,11 @@ import java.util.Optional;
 
 public interface FriendRepository extends JpaRepository<Friend, Long> {
 
-    @Query("SELECT f FROM Friend f JOIN FETCH f.user JOIN FETCH f.friend WHERE (f.user = :user OR f.friend = :user) AND f.status = 'ACCEPTED'")
+    // 상대방이 탈퇴(withdrawalAt != null)한 친구는 목록에서 제외(버그 항목6)
+    @Query("SELECT f FROM Friend f JOIN FETCH f.user JOIN FETCH f.friend " +
+           "WHERE (f.user = :user OR f.friend = :user) AND f.status = 'ACCEPTED' " +
+           "AND ((f.user = :user AND f.friend.withdrawalAt IS NULL) " +
+           "  OR (f.friend = :user AND f.user.withdrawalAt IS NULL))")
     List<Friend> findAcceptedFriends(@Param("user") User user);
 
     @Query("SELECT f FROM Friend f JOIN FETCH f.user WHERE f.friend = :friend AND f.status = :status")

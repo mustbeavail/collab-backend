@@ -9,4 +9,6 @@ public class TeamMemberDto {
     private String userId;
     private String nickname;
     private String role;
+    private String avatarUrl;
+    private boolean online;
 }

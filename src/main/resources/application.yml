@@ -50,7 +50,7 @@ server:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiry: 3600000      # 1 hour
-  refresh-token-expiry: 604800000   # 7 days
+  refresh-token-expiry: 43200000    # 12 hours (마지막 활동 후 12시간 무활동 시 자동 로그아웃, 슬라이딩)
 
 file:
   upload-dir: ${FILE_UPLOAD_DIR:./uploads}

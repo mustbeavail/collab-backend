@@ -12,6 +12,7 @@ public class ChatRoomDetailResponse {
     private String roomName;
     private LocalDateTime createdAt;
     private boolean isDm;
+    private Long teamIdx;   // 팀 채팅방이면 팀 식별자, 아니면 null
 
     public static ChatRoomDetailResponse from(ChatRoom room) {
         return ChatRoomDetailResponse.builder()
@@ -19,6 +20,7 @@ public class ChatRoomDetailResponse {
                 .roomName(room.getRoomName())
                 .createdAt(room.getCreatedAt())
                 .isDm(room.getTeam() == null)
+                .teamIdx(room.getTeam() != null ? room.getTeam().getTeamIdx() : null)
                 .build();
     }
 }

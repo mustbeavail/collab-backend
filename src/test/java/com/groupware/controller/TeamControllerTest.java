@@ -49,7 +49,7 @@ class TeamControllerTest {
                 .teamName("Team Alpha")
                 .myRole("LEADER")
                 .channels(List.of(new TeamChannelDto(1L, "general", false), new TeamChannelDto(2L, "random", false)))
-                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
+                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
 
         given(teamService.getMyTeams("uid-1")).willReturn(List.of(response));
@@ -77,7 +77,7 @@ class TeamControllerTest {
     void 팀_정보_조회_200() throws Exception {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(1L).teamName("Team Alpha").myRole("MEMBER")
-                .channels(List.of()).members(List.of(new TeamMemberDto("uid-1", "홍길동", "MEMBER")))
+                .channels(List.of()).members(List.of(new TeamMemberDto("uid-1", "홍길동", "MEMBER", null, false)))
                 .build();
         given(teamService.getTeamInfo("uid-1", 1L)).willReturn(response);
 
@@ -112,7 +112,7 @@ class TeamControllerTest {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(1L).teamName("팀").myRole("LEADER")
                 .channels(List.of(new TeamChannelDto(5L, "새채널", true)))
-                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
+                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
         given(teamService.createChannel(eq("uid-1"), eq(1L), any(CreateChannelRequest.class))).willReturn(response);
 
@@ -139,7 +139,7 @@ class TeamControllerTest {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(10L).teamName("새팀").myRole("LEADER")
                 .channels(List.of(new TeamChannelDto(1L, "general", false)))
-                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER")))
+                .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
 
         given(teamService.createTeam(eq("uid-1"), any(CreateTeamRequest.class))).willReturn(response);
