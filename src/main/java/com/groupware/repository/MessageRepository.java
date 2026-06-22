@@ -23,4 +23,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.chatRoom.roomIdx = :roomIdx AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType = 'TEXT' AND m.content LIKE %:q% ORDER BY m.sentAt DESC")
     List<Message> searchByContent(@Param("roomIdx") Long roomIdx, @Param("q") String q, Pageable pageable);
+
+    // 항목1(일정이후): 특정 파일(fileIdx)을 참조하는 FILE 메시지 — 삭제 시 '삭제된 파일' 마킹용
+    @Query("SELECT m FROM Message m WHERE m.chatRoom = :room AND m.msgType = 'FILE' AND (m.delYn IS NULL OR m.delYn = false) AND m.content LIKE :pat")
+    List<Message> findFileMessagesByRoomAndFileIdx(@Param("room") ChatRoom room, @Param("pat") String pat);
 }

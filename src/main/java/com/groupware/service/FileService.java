@@ -1,17 +1,23 @@
 package com.groupware.service;
 
 import com.groupware.domain.ChatRoom;
+import com.groupware.domain.Message;
 import com.groupware.domain.UploadFile;
 import com.groupware.domain.User;
+import com.groupware.dto.chat.ChatMessagePayload;
 import com.groupware.dto.file.FileResponseDto;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.MessageRepository;
 import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.UploadFileRepository;
 import com.groupware.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -38,6 +44,9 @@ public class FileService {
     private final RoomMemberRepository roomMemberRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final UserRepository userRepository;
+    private final MessageRepository messageRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -118,12 +127,39 @@ public class FileService {
             throw new CustomException(ErrorCode.FILE_ACCESS_DENIED);
         }
 
+        ChatRoom room = uploadFile.getChatRoom();
+
+        // 항목1(일정이후 추가): FILE 메시지는 남기되 '삭제된 파일'로 마킹(content에 deleted=true).
+        // 파일함/메시지 어느 쪽에서 삭제해도 동일 경로 → 메시지 버블이 새로고침에도 '삭제된 파일'로 보임.
+        if (room != null) {
+            List<Message> fileMsgs = messageRepository.findFileMessagesByRoomAndFileIdx(
+                    room, "%\"fileIdx\":" + fileIdx + ",%");
+            for (Message m : fileMsgs) {
+                try {
+                    ObjectNode node = (ObjectNode) objectMapper.readTree(m.getContent());
+                    node.put("deleted", true);
+                    m.setContent(objectMapper.writeValueAsString(node));
+                    messageRepository.save(m);
+                } catch (Exception ignored) { }
+            }
+        }
+
+        // 실제 파일 삭제(레코드 + 물리 파일)
         Path filePath = Paths.get(uploadDir, "files", uploadFile.getNewFilename());
         try {
             Files.deleteIfExists(filePath);
         } catch (IOException ignored) { }
-
         uploadFileRepository.delete(uploadFile);
+
+        // 실시간 양방향 반영(메시지 버블 + 파일함): FILE_DELETED 브로드캐스트
+        if (room != null) {
+            messagingTemplate.convertAndSend("/topic/room/" + room.getRoomIdx(),
+                    ChatMessagePayload.builder()
+                            .roomIdx(room.getRoomIdx())
+                            .msgType("FILE_DELETED")
+                            .content(String.valueOf(fileIdx))
+                            .build());
+        }
     }
 
     private ChatRoom getActiveRoom(Long roomIdx) {

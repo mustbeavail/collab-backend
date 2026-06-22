@@ -1,16 +1,22 @@
 package com.groupware.service;
 
 import com.groupware.domain.ChatRoom;
+import com.groupware.domain.Message;
 import com.groupware.domain.UploadFile;
 import com.groupware.domain.User;
+import com.groupware.dto.chat.ChatMessagePayload;
 import com.groupware.dto.file.FileResponseDto;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.ChatRoomRepository;
+import com.groupware.repository.MessageRepository;
 import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.UploadFileRepository;
 import com.groupware.repository.UserRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.Spy;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +36,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -42,6 +49,9 @@ class FileServiceTest {
     @Mock private RoomMemberRepository roomMemberRepository;
     @Mock private TeamMemberRepository teamMemberRepository;
     @Mock private UserRepository userRepository;
+    @Mock private MessageRepository messageRepository;
+    @Mock private SimpMessagingTemplate messagingTemplate;
+    @Spy private ObjectMapper objectMapper = new ObjectMapper();
 
     @TempDir Path tempDir;
 
@@ -123,10 +133,38 @@ class FileServiceTest {
     void 파일_삭제_성공() {
         UploadFile f = makeUploadFile(1L);
         given(uploadFileRepository.findById(1L)).willReturn(Optional.of(f));
+        given(messageRepository.findFileMessagesByRoomAndFileIdx(any(), any())).willReturn(List.of());
 
         fileService.delete("a@test.com", 1L);
 
         verify(uploadFileRepository).delete(f);
+    }
+
+    @Test
+    void 파일_삭제시_FILE메시지_삭제표시_및_FILE_DELETED_브로드캐스트() {
+        UploadFile f = makeUploadFile(6L);
+        Message fileMsg = new Message();
+        ReflectionTestUtils.setField(fileMsg, "msgIdx", 30L);
+        ReflectionTestUtils.setField(fileMsg, "chatRoom", room);
+        ReflectionTestUtils.setField(fileMsg, "msgType", "FILE");
+        ReflectionTestUtils.setField(fileMsg, "content",
+                "{\"fileIdx\":6,\"oriFilename\":\"x.txt\",\"fileSize\":19,\"fileExtension\":\"txt\"}");
+        ReflectionTestUtils.setField(fileMsg, "delYn", false);
+
+        given(uploadFileRepository.findById(6L)).willReturn(Optional.of(f));
+        given(messageRepository.findFileMessagesByRoomAndFileIdx(room, "%\"fileIdx\":6,%"))
+                .willReturn(List.of(fileMsg));
+
+        fileService.delete("a@test.com", 6L);
+
+        // 메시지는 남고 content에 deleted=true 마킹
+        assertThat(fileMsg.getContent()).contains("\"deleted\":true");
+        verify(messageRepository).save(fileMsg);
+        // FILE_DELETED 브로드캐스트
+        ArgumentCaptor<ChatMessagePayload> captor = ArgumentCaptor.forClass(ChatMessagePayload.class);
+        verify(messagingTemplate).convertAndSend(eq("/topic/room/1"), captor.capture());
+        assertThat(captor.getValue().getMsgType()).isEqualTo("FILE_DELETED");
+        assertThat(captor.getValue().getContent()).isEqualTo("6");
     }
 
     @Test
