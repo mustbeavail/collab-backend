@@ -4,8 +4,10 @@ import com.groupware.domain.User;
 import com.groupware.dto.user.ChangePasswordRequest;
 import com.groupware.dto.user.UpdateProfileRequest;
 import com.groupware.dto.user.UserProfileResponse;
+import com.groupware.domain.Friend;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
+import com.groupware.repository.FriendRepository;
 import com.groupware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TeamService teamService;
+    private final FriendRepository friendRepository;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -158,13 +161,36 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserProfileResponse getUserPublicProfile(String targetUserId) {
+    public UserProfileResponse getUserPublicProfile(String currentUserId, String targetUserId) {
         User user = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+        // 탈퇴 회원: 메일/자기소개 등 일절 미표시(I-5). 404 대신 익명화된 응답을 준다
+        // (404면 프론트가 호출부에서 넘긴 이메일로 폴백 표시해 정보가 새어나감).
         if (user.getWithdrawalAt() != null) {
-            throw new CustomException(ErrorCode.USER_NOT_FOUND);
+            return UserProfileResponse.withdrawn(user);
         }
-        return UserProfileResponse.from(user);
+        UserProfileResponse res = UserProfileResponse.from(user);
+        res.setFriendStatus(resolveFriendStatus(currentUserId, user));
+        return res;
+    }
+
+    /** 현재 사용자와 대상의 친구 관계 상태(I-1: 친구 추가 버튼 분기). */
+    private String resolveFriendStatus(String currentUserId, User target) {
+        if (currentUserId == null) return "NONE";
+        if (currentUserId.equals(target.getUserId())) return "SELF";
+        User me = userRepository.findById(currentUserId).orElse(null);
+        if (me == null) return "NONE";
+        // 내가 보낸 관계
+        Friend outgoing = friendRepository.findByUserAndFriend(me, target).orElse(null);
+        if (outgoing != null) {
+            return "ACCEPTED".equals(outgoing.getStatus()) ? "FRIEND" : "SENT";
+        }
+        // 상대가 보낸 관계
+        Friend incoming = friendRepository.findByUserAndFriend(target, me).orElse(null);
+        if (incoming != null) {
+            return "ACCEPTED".equals(incoming.getStatus()) ? "FRIEND" : "RECEIVED";
+        }
+        return "NONE";
     }
 
     @Transactional(readOnly = true)

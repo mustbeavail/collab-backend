@@ -37,6 +37,7 @@ CREATE TABLE `chat_rooms` (
   `room_idx` bigint(20) NOT NULL AUTO_INCREMENT,
   `team_idx` bigint(20) DEFAULT NULL,
   `room_name` varchar(255) DEFAULT NULL,
+  `custom_name` tinyint(1) DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `del_date` datetime DEFAULT NULL,
   PRIMARY KEY (`room_idx`),

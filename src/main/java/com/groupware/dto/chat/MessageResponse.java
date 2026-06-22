@@ -19,11 +19,13 @@ public class MessageResponse {
     private LocalDateTime sentAt;
 
     public static MessageResponse from(Message msg) {
+        com.groupware.domain.User user = msg.getUser();
+        boolean withdrawn = user.getWithdrawalAt() != null;
         return MessageResponse.builder()
                 .msgIdx(msg.getMsgIdx())
-                .userId(msg.getUser().getUserId())
-                .nickname(msg.getUser().getNick())
-                .avatarUrl(msg.getUser().getAvatarUrl())
+                .userId(user.getUserId())
+                .nickname(withdrawn ? "(탈퇴한 회원)" : user.getNick())
+                .avatarUrl(withdrawn ? null : user.getAvatarUrl())
                 .content(msg.getContent())
                 .msgType(msg.getMsgType())
                 .sentAt(msg.getSentAt())

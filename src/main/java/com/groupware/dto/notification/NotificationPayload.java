@@ -24,4 +24,5 @@ public class NotificationPayload {
     // 새 메시지 알림(NEW_MESSAGE)용
     private Long roomIdx;
     private String content;
+    private String roomName; // 헤더 알림벨 표시·채팅방 열기용(I-3)
 }

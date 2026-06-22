@@ -32,6 +32,16 @@ public interface ChatRoomRepository extends JpaRepository<ChatRoom, Long> {
         """)
     List<ChatRoom> findSharedNonTeamRooms(@Param("u1") User u1, @Param("u2") User u2);
 
+    // 탈퇴 재가입 시 기존 방 복원용 — exitAt 무관하게 두 사람이 포함된 비팀 채팅방 검색(버그 항목12)
+    @Query("""
+        SELECT r FROM ChatRoom r
+        WHERE r.team IS NULL AND r.delDate IS NULL
+          AND EXISTS (SELECT m FROM RoomMember m WHERE m.chatRoom = r AND m.user = :u1)
+          AND EXISTS (SELECT m FROM RoomMember m WHERE m.chatRoom = r AND m.user = :u2)
+        ORDER BY r.roomIdx ASC
+        """)
+    List<ChatRoom> findSharedNonTeamRoomsIncludeLeft(@Param("u1") User u1, @Param("u2") User u2);
+
     @Query("SELECT DISTINCT rm.chatRoom FROM RoomMember rm WHERE rm.user.userId = :userId AND rm.exitAt IS NULL " +
            "AND rm.chatRoom.delDate IS NULL AND rm.chatRoom.roomName LIKE %:q%")
     List<ChatRoom> searchRoomsByUser(@Param("userId") String userId, @Param("q") String q);

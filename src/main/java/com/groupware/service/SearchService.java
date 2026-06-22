@@ -44,7 +44,7 @@ public class SearchService {
                 .findAcceptedFriends(user)
                 .stream()
                 .map(f -> f.getUser().getUserId().equals(userId) ? f.getFriend() : f.getUser())
-                .filter(u -> u.getNick().toLowerCase().contains(lower) || u.getUserId().toLowerCase().contains(lower))
+                .filter(u -> u.getNick() != null && (u.getNick().toLowerCase().contains(lower) || u.getUserId().toLowerCase().contains(lower)))
                 .limit(MAX_RESULTS)
                 .map(u -> GlobalSearchResponse.FriendResult.builder()
                         .userId(u.getUserId())

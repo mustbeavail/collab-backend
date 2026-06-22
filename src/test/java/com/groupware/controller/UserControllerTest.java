@@ -283,7 +283,7 @@ class UserControllerTest {
         UserProfileResponse profile = UserProfileResponse.builder()
                 .userId("uid-2").email("other@test.com").nickname("다른유저")
                 .joinAt(LocalDateTime.of(2026, 1, 1, 0, 0)).build();
-        given(userService.getUserPublicProfile("uid-2")).willReturn(profile);
+        given(userService.getUserPublicProfile("uid-1", "uid-2")).willReturn(profile);
 
         mockMvc.perform(get("/api/users/uid-2"))
                 .andExpect(status().isOk())
@@ -301,7 +301,7 @@ class UserControllerTest {
     @Test
     @WithMockUser(username = "uid-1")
     void 공개_프로필_조회_사용자없음_404() throws Exception {
-        given(userService.getUserPublicProfile("uid-x"))
+        given(userService.getUserPublicProfile("uid-1", "uid-x"))
                 .willThrow(new CustomException(ErrorCode.USER_NOT_FOUND));
 
         mockMvc.perform(get("/api/users/uid-x"))

@@ -48,7 +48,7 @@ class TeamControllerTest {
                 .teamIdx(1L)
                 .teamName("Team Alpha")
                 .myRole("LEADER")
-                .channels(List.of(new TeamChannelDto(1L, "general", false), new TeamChannelDto(2L, "random", false)))
+                .channels(List.of(new TeamChannelDto(1L, "general", false, 1, false), new TeamChannelDto(2L, "random", false, 1, false)))
                 .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
 
@@ -111,7 +111,7 @@ class TeamControllerTest {
     void 채널_생성_200() throws Exception {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(1L).teamName("팀").myRole("LEADER")
-                .channels(List.of(new TeamChannelDto(5L, "새채널", true)))
+                .channels(List.of(new TeamChannelDto(5L, "새채널", true, 1, true)))
                 .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
         given(teamService.createChannel(eq("uid-1"), eq(1L), any(CreateChannelRequest.class))).willReturn(response);
@@ -138,7 +138,7 @@ class TeamControllerTest {
     void 팀_생성_201() throws Exception {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(10L).teamName("새팀").myRole("LEADER")
-                .channels(List.of(new TeamChannelDto(1L, "general", false)))
+                .channels(List.of(new TeamChannelDto(1L, "general", false, 1, false)))
                 .members(List.of(new TeamMemberDto("uid-1", "홍길동", "LEADER", null, false)))
                 .build();
 
@@ -397,7 +397,7 @@ class TeamControllerTest {
     void 채널_참여_200() throws Exception {
         TeamSidebarResponse response = TeamSidebarResponse.builder()
                 .teamIdx(1L).teamName("팀A").myRole("MEMBER")
-                .channels(List.of(new TeamChannelDto(10L, "general", true))).members(List.of())
+                .channels(List.of(new TeamChannelDto(10L, "general", true, 1, false))).members(List.of())
                 .build();
 
         given(teamService.joinChannel("uid-1", 1L, 10L)).willReturn(response);

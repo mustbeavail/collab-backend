@@ -12,4 +12,6 @@ public class DmRoomResponse {
     private boolean dm;           // 1:1 여부(참여자 2명)
     private String targetUserId;  // DM 상대 userId(그룹이면 null)
     private String avatarUrl;     // DM 상대 프로필 사진(그룹이면 null)
+    private int memberCount;      // 활성 멤버 수(I-14: 인원수별 색 구분)
+    private boolean owner;        // 현재 사용자가 이 방의 OWNER인지(I-13: 이름변경 권한)
 }

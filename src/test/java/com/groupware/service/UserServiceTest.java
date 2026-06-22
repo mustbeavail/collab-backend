@@ -6,6 +6,7 @@ import com.groupware.dto.user.UpdateProfileRequest;
 import com.groupware.dto.user.UserProfileResponse;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
+import com.groupware.repository.FriendRepository;
 import com.groupware.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,7 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private TeamService teamService;
+    @Mock private FriendRepository friendRepository;
 
     @Test
     void 내_프로필_조회_성공() {
@@ -330,24 +332,35 @@ class UserServiceTest {
 
     @Test
     void 공개_프로필_조회_성공() {
+        User me = buildUser("uid-1", "me@test.com", "나", null, null);
         User user = buildUser("uid-2", "other@test.com", "다른유저", "소개글", null);
         given(userRepository.findById("uid-2")).willReturn(Optional.of(user));
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(friendRepository.findByUserAndFriend(me, user)).willReturn(Optional.empty());
+        given(friendRepository.findByUserAndFriend(user, me)).willReturn(Optional.empty());
 
-        UserProfileResponse result = userService.getUserPublicProfile("uid-2");
+        UserProfileResponse result = userService.getUserPublicProfile("uid-1", "uid-2");
 
         assertThat(result.getUserId()).isEqualTo("uid-2");
         assertThat(result.getNickname()).isEqualTo("다른유저");
+        assertThat(result.isWithdrawn()).isFalse();
+        assertThat(result.getFriendStatus()).isEqualTo("NONE");
     }
 
     @Test
-    void 공개_프로필_조회_탈퇴한사용자_404() {
-        User user = buildUser("uid-2", "other@test.com", "탈퇴유저", null, LocalDateTime.now());
+    void 공개_프로필_조회_탈퇴한사용자_익명화() {
+        // I-5: 탈퇴 회원은 메일/자기소개 등 일절 미표시(404 대신 익명화 응답)
+        User user = buildUser("uid-2", "other@test.com", "탈퇴유저", "비밀소개", LocalDateTime.now());
         given(userRepository.findById("uid-2")).willReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> userService.getUserPublicProfile("uid-2"))
-                .isInstanceOf(CustomException.class)
-                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.USER_NOT_FOUND));
+        UserProfileResponse result = userService.getUserPublicProfile("uid-1", "uid-2");
+
+        assertThat(result.isWithdrawn()).isTrue();
+        assertThat(result.getNickname()).isEqualTo("(탈퇴한 회원)");
+        assertThat(result.getEmail()).isNull();
+        assertThat(result.getAbout()).isNull();
+        assertThat(result.getAvatarUrl()).isNull();
+        assertThat(result.getJoinAt()).isNull();
     }
 
     // ─── deleteAvatar ─────────────────────────────────────────────────────

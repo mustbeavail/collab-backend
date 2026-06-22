@@ -125,6 +125,7 @@ public class ChatService {
                                 .userId(sender.getUserId())
                                 .nickname(sender.getNick())
                                 .content(preview)
+                                .roomName(room.getRoomName())
                                 .build()));
     }
 
@@ -133,22 +134,33 @@ public class ChatService {
         User me = getActiveUser(userId);
         return chatRoomRepository.findMyDmRooms(userId).stream().map(room -> {
             List<RoomMember> members = roomMemberRepository.findAllActiveByRoom(room);
+            boolean owner = members.stream()
+                    .anyMatch(m -> "OWNER".equals(m.getRole()) && m.getUser().getUserId().equals(userId));
+            boolean custom = Boolean.TRUE.equals(room.getCustomName());
             if (members.size() == 2) {
                 User other = members.stream().map(RoomMember::getUser)
                         .filter(u -> !u.getUserId().equals(userId))
                         .findFirst().orElse(me);
+                // 이름을 직접 변경한 DM이면 커스텀 이름, 아니면 상대 닉네임(기본)
+                String displayName = custom && room.getRoomName() != null
+                        ? room.getRoomName()
+                        : (other.getNick() != null ? other.getNick() : "(탈퇴한 회원)");
                 return DmRoomResponse.builder()
                         .roomIdx(room.getRoomIdx())
-                        .name(other.getNick())
+                        .name(displayName)
                         .dm(true)
                         .targetUserId(other.getUserId())
                         .avatarUrl(other.getAvatarUrl())
+                        .memberCount(members.size())
+                        .owner(owner)
                         .build();
             }
             return DmRoomResponse.builder()
                     .roomIdx(room.getRoomIdx())
                     .name(room.getRoomName())
                     .dm(false)
+                    .memberCount(members.size())
+                    .owner(owner)
                     .build();
         }).toList();
     }
@@ -160,12 +172,12 @@ public class ChatService {
         User target = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
-        // 두 사람이 이미 같이 있는 비팀 채팅방이 있으면 재사용(1:1 우선), 없을 때만 생성(버그 항목27)
-        List<ChatRoom> shared = chatRoomRepository.findSharedNonTeamRooms(me, target);
-        if (!shared.isEmpty()) {
-            return ChatRoomResponse.from(shared.get(0));
-        }
-        return ChatRoomResponse.from(createDmRoom(me, target));
+        // 카카오톡식 로직(I-2): 현재 활성 멤버가 정확히 {나, 상대} 2명인 방만 재사용한다.
+        // 한 명이 나가 1명만 남은 방(휴면방)은 재사용하지 않고 새 방을 만든다.
+        // 3명 이상으로 늘릴 때는 별도 로직(inviteToRoom)으로 기존 방을 유지한 채 인원만 늘린다.
+        return chatRoomRepository.findDmRoom(me, target)
+                .map(ChatRoomResponse::from)
+                .orElseGet(() -> ChatRoomResponse.from(createDmRoom(me, target)));
     }
 
     @Transactional(readOnly = true)
@@ -214,6 +226,9 @@ public class ChatService {
         member.setRole("MEMBER");
         member.setJoinAt(LocalDateTime.now());
         roomMemberRepository.save(member);
+
+        // 입장 시스템 메시지(E *추가)
+        broadcastSystemMessage(room, target, target.getNick() + "님이 입장했습니다.");
     }
 
     @Transactional
@@ -227,6 +242,22 @@ public class ChatService {
 
         member.setExitAt(LocalDateTime.now());
         roomMemberRepository.save(member);
+
+        // 퇴장 시스템 메시지(E *추가)
+        broadcastSystemMessage(room, user, user.getNick() + "님이 퇴장했습니다.");
+
+        // 카카오톡식 로직(I-2): 남은 활성 멤버가 0명이면 채팅방 소프트딜리트
+        // (1명만 남으면 휴면방으로 그 1명에게만 유지된다)
+        softDeleteIfEmpty(room);
+    }
+
+    /** 활성 멤버가 0명이면 채팅방을 소프트딜리트(I-2). */
+    private void softDeleteIfEmpty(ChatRoom room) {
+        if (room.getTeam() != null) return; // 팀 채팅방은 멤버 0이어도 유지(팀 소유)
+        if (roomMemberRepository.findAllActiveByRoom(room).isEmpty()) {
+            room.setDelDate(LocalDateTime.now());
+            chatRoomRepository.save(room);
+        }
     }
 
     /** 팀 채팅방 삭제(소프트). 팀 LEADER만 가능. */
@@ -274,6 +305,9 @@ public class ChatService {
 
         targetMember.setExitAt(LocalDateTime.now());
         roomMemberRepository.save(targetMember);
+
+        // 추방 후 활성 멤버 0명이면 소프트딜리트(I-2)
+        softDeleteIfEmpty(room);
     }
 
     @Transactional(readOnly = true)
@@ -281,15 +315,16 @@ public class ChatService {
         ChatRoom room = getActiveRoom(roomIdx);
         User user = getActiveUser(userId);
         checkAccess(room, user);
-        return ChatRoomDetailResponse.from(room);
+        int memberCount = roomMemberRepository.findAllActiveByRoom(room).size();
+        String myRole = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
+                .map(RoomMember::getRole).orElse(null);
+        return ChatRoomDetailResponse.from(room, memberCount, myRole);
     }
 
     @Transactional
     public ChatRoomDetailResponse updateRoomInfo(String userId, Long roomIdx, UpdateRoomInfoRequest request) {
+        // 채팅방 이름 변경(I-13). 팀/일반 구분 없이 방 OWNER만 가능.
         ChatRoom room = getActiveRoom(roomIdx);
-        if (room.getTeam() != null) {
-            throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
-        }
         User user = getActiveUser(userId);
         RoomMember member = roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_ROOM_MEMBER));
@@ -297,8 +332,26 @@ public class ChatService {
             throw new CustomException(ErrorCode.TEAM_ACCESS_DENIED);
         }
         room.setRoomName(request.getRoomName());
+        room.setCustomName(true); // 직접 변경됨 → 2인 DM도 사이드바에 커스텀 이름 표시
         chatRoomRepository.save(room);
-        return ChatRoomDetailResponse.from(room);
+
+        // 변경된 이름을 방 멤버 전원에게 실시간 전파(I-13: 모든 패널·열린 창 즉시 반영)
+        List<RoomMember> members = roomMemberRepository.findAllActiveByRoom(room);
+        broadcastRoomRenamed(room, members);
+        return ChatRoomDetailResponse.from(room, members.size(), "OWNER");
+    }
+
+    private void broadcastRoomRenamed(ChatRoom room, List<RoomMember> members) {
+        members.stream()
+                .map(RoomMember::getUser)
+                .forEach(u -> messagingTemplate.convertAndSendToUser(
+                        u.getUserId(),
+                        "/queue/notifications",
+                        NotificationPayload.builder()
+                                .type("ROOM_RENAMED")
+                                .roomIdx(room.getRoomIdx())
+                                .roomName(room.getRoomName())
+                                .build()));
     }
 
     private ChatRoom getActiveRoom(Long roomIdx) {
@@ -317,6 +370,28 @@ public class ChatService {
         if (!roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)) {
             throw new CustomException(ErrorCode.NOT_ROOM_MEMBER);
         }
+    }
+
+    private void broadcastSystemMessage(ChatRoom room, User actor, String text) {
+        Message sysMsg = new Message();
+        sysMsg.setChatRoom(room);
+        sysMsg.setUser(actor);
+        sysMsg.setContent(text);
+        sysMsg.setMsgType("SYSTEM");
+        sysMsg.setSentAt(LocalDateTime.now());
+        sysMsg.setDelYn(false);
+        sysMsg = messageRepository.save(sysMsg);
+
+        messagingTemplate.convertAndSend("/topic/room/" + room.getRoomIdx(),
+                ChatMessagePayload.builder()
+                        .msgIdx(sysMsg.getMsgIdx())
+                        .roomIdx(room.getRoomIdx())
+                        .userId(actor.getUserId())
+                        .nickname(actor.getNick())
+                        .content(text)
+                        .msgType("SYSTEM")
+                        .sentAt(sysMsg.getSentAt())
+                        .build());
     }
 
     private ChatRoom createDmRoom(User u1, User u2) {

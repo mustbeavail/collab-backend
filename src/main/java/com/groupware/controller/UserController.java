@@ -81,8 +81,10 @@ public class UserController {
 
     @GetMapping("/{userId}")
     public ResponseEntity<ApiResponse<UserProfileResponse>> getUserProfile(
-            @PathVariable String userId) {
-        return ResponseEntity.ok(ApiResponse.ok(userService.getUserPublicProfile(userId)));
+            @PathVariable String userId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        String currentUserId = userDetails != null ? userDetails.getUsername() : null;
+        return ResponseEntity.ok(ApiResponse.ok(userService.getUserPublicProfile(currentUserId, userId)));
     }
 
     @GetMapping("/search")

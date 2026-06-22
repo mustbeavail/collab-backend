@@ -21,7 +21,7 @@ public class FriendResponse {
         return FriendResponse.builder()
                 .friendIdx(f.getFriendIdx())
                 .userId(other.getUserId())
-                .nickname(other.getNick())
+                .nickname(other.getNick() != null ? other.getNick() : "(탈퇴한 회원)")
                 .email(other.getUserId())
                 .status(f.getStatus())
                 .avatarUrl(other.getAvatarUrl())

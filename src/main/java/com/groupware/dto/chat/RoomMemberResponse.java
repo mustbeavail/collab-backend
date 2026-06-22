@@ -13,9 +13,10 @@ public class RoomMemberResponse {
     private String role;
 
     public static RoomMemberResponse from(RoomMember rm) {
+        String nick = rm.getUser().getNick();
         return RoomMemberResponse.builder()
                 .userId(rm.getUser().getUserId())
-                .nickname(rm.getUser().getNick())
+                .nickname(nick != null ? nick : "(탈퇴한 회원)")
                 .avatarUrl(rm.getUser().getAvatarUrl())
                 .role(rm.getRole())
                 .build();

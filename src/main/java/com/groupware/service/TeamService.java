@@ -430,11 +430,21 @@ public class TeamService {
                 .orElse("MEMBER");
 
         Set<Long> joinedRoomIds = Set.of();
+        java.util.Map<Long, Integer> memberCounts = new java.util.HashMap<>();
+        Set<Long> ownedRoomIds = Set.of();
         if (!channels.isEmpty()) {
             List<Long> roomIds = channels.stream().map(ChatRoom::getRoomIdx).toList();
             joinedRoomIds = Set.copyOf(roomMemberRepository.findJoinedRoomIdxByUserIdAndRoomIds(userId, roomIds));
+            // 활성 멤버 수 배치 조회(I-14)
+            for (Object[] row : roomMemberRepository.countActiveByRoomIds(roomIds)) {
+                memberCounts.put((Long) row[0], ((Long) row[1]).intValue());
+            }
+            // 내가 OWNER인 채널(I-13: 이름변경 권한)
+            ownedRoomIds = Set.copyOf(roomMemberRepository.findOwnedRoomIdxByUserIdAndRoomIds(userId, roomIds));
         }
         final Set<Long> joined = joinedRoomIds;
+        final java.util.Map<Long, Integer> counts = memberCounts;
+        final Set<Long> owned = ownedRoomIds;
 
         return TeamSidebarResponse.builder()
                 .teamIdx(team.getTeamIdx())
@@ -442,7 +452,10 @@ public class TeamService {
                 .about(team.getAbout())
                 .myRole(myRole)
                 .channels(channels.stream()
-                        .map(ch -> new TeamChannelDto(ch.getRoomIdx(), ch.getRoomName(), joined.contains(ch.getRoomIdx())))
+                        .map(ch -> new TeamChannelDto(ch.getRoomIdx(), ch.getRoomName(),
+                                joined.contains(ch.getRoomIdx()),
+                                counts.getOrDefault(ch.getRoomIdx(), 0),
+                                owned.contains(ch.getRoomIdx())))
                         .toList())
                 .members(members.stream()
                         // 리더 → 매니저 → 멤버 순 정렬(qa 항목18)

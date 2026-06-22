@@ -224,6 +224,43 @@ class ChatServiceTest {
     }
 
     @Test
+    void 이름변경한_2인DM은_상대닉네임_대신_커스텀이름_표시() {
+        // I-15: custom_name=true인 2인 DM은 상대 닉네임이 아니라 직접 지정한 방 이름을 표시한다.
+        ChatRoom custom = new ChatRoom();
+        ReflectionTestUtils.setField(custom, "roomIdx", 3L);
+        ReflectionTestUtils.setField(custom, "roomName", "내 커스텀 방제");
+        ReflectionTestUtils.setField(custom, "customName", true);
+
+        RoomMember ownerA = roomMember(userA);
+        ReflectionTestUtils.setField(ownerA, "role", "OWNER");
+
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(chatRoomRepository.findMyDmRooms("a@test.com")).willReturn(List.of(custom));
+        given(roomMemberRepository.findAllActiveByRoom(custom)).willReturn(List.of(ownerA, roomMember(userB)));
+
+        DmRoomResponse dm = chatService.getMyDmRooms("a@test.com").get(0);
+
+        assertThat(dm.isDm()).isTrue();
+        assertThat(dm.getName()).isEqualTo("내 커스텀 방제"); // 상대 닉네임("Bob")이 아님
+        assertThat(dm.isOwner()).isTrue();                    // 이름변경 권한(OWNER)
+        assertThat(dm.getMemberCount()).isEqualTo(2);
+    }
+
+    @Test
+    void 이름변경_안한_2인DM은_상대_닉네임_표시() {
+        // I-15: custom_name이 아니면(기본) 종전대로 상대방 현재 닉네임을 표시한다.
+        ReflectionTestUtils.setField(room, "roomName", "Alice, Bob"); // 생성시 자동 이름(표시에 안 씀)
+
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(chatRoomRepository.findMyDmRooms("a@test.com")).willReturn(List.of(room));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(roomMember(userA), roomMember(userB)));
+
+        DmRoomResponse dm = chatService.getMyDmRooms("a@test.com").get(0);
+
+        assertThat(dm.getName()).isEqualTo("Bob"); // 자동 이름이 아니라 상대 닉네임
+    }
+
+    @Test
     void 팀채널_초대_팀멤버_성공() {
         Team team = new Team();
         ReflectionTestUtils.setField(team, "teamIdx", 7L);
@@ -240,6 +277,8 @@ class ChatServiceTest {
         given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(new com.groupware.domain.TeamMember()));
         given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "b@test.com")).willReturn(Optional.of(new com.groupware.domain.TeamMember()));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(teamRoom, userB)).willReturn(false);
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
 
         chatService.inviteToRoom("a@test.com", 9L, req);
 
@@ -257,7 +296,8 @@ class ChatServiceTest {
     void DM방_없으면_새로_생성() {
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
-        given(chatRoomRepository.findSharedNonTeamRooms(userA, userB)).willReturn(List.of());
+        // 카카오톡식(I-2): 정확히 2명 일치하는 방이 없으면 새로 만든다
+        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.empty());
 
         ChatRoom newRoom = new ChatRoom();
         ReflectionTestUtils.setField(newRoom, "roomIdx", 5L);
@@ -298,6 +338,7 @@ class ChatServiceTest {
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userB)).willReturn(false);
         given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
 
         chatService.inviteToRoom("a@test.com", 1L, req);
 
@@ -385,6 +426,7 @@ class ChatServiceTest {
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(rm));
         given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
 
         chatService.leaveRoom("a@test.com", 1L);
 
@@ -430,14 +472,20 @@ class ChatServiceTest {
 
     @Test
     void 방정보_조회_성공() {
+        RoomMember myMember = new RoomMember();
+        ReflectionTestUtils.setField(myMember, "role", "OWNER");
+
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(true);
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of());
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(myMember));
 
         ChatRoomDetailResponse result = chatService.getRoomInfo("a@test.com", 1L);
 
         assertThat(result.getRoomName()).isEqualTo("general");
         assertThat(result.isDm()).isTrue();
+        assertThat(result.getMyRole()).isEqualTo("OWNER");
     }
 
     @Test
@@ -453,6 +501,7 @@ class ChatServiceTest {
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(ownerMember));
         given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> inv.getArgument(0));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of());
 
         ChatRoomDetailResponse result = chatService.updateRoomInfo("a@test.com", 1L, req);
 
@@ -478,18 +527,52 @@ class ChatServiceTest {
     }
 
     @Test
-    void 방정보_수정_팀채널_예외() {
+    void 방정보_수정_팀채널_비OWNER_예외() {
+        // I-13: 팀 채팅방도 이름변경 가능하나 방 OWNER만. 비OWNER(MEMBER)는 차단.
         com.groupware.domain.Team team = new com.groupware.domain.Team();
         ReflectionTestUtils.setField(room, "team", team);
+
+        RoomMember memberRole = new RoomMember();
+        ReflectionTestUtils.setField(memberRole, "user", userA);
+        ReflectionTestUtils.setField(memberRole, "role", "MEMBER");
 
         UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
         ReflectionTestUtils.setField(req, "roomName", "새이름");
 
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(memberRole));
 
         assertThatThrownBy(() -> chatService.updateRoomInfo("a@test.com", 1L, req))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.TEAM_ACCESS_DENIED);
+    }
+
+    @Test
+    void 방정보_수정_팀채널_OWNER_성공_및_브로드캐스트() {
+        // I-13: 팀 채팅방 OWNER는 이름변경 가능 + 멤버에게 ROOM_RENAMED 실시간 전파
+        com.groupware.domain.Team team = new com.groupware.domain.Team();
+        ReflectionTestUtils.setField(room, "team", team);
+
+        RoomMember ownerMember = new RoomMember();
+        ReflectionTestUtils.setField(ownerMember, "user", userA);
+        ReflectionTestUtils.setField(ownerMember, "role", "OWNER");
+
+        UpdateRoomInfoRequest req = new UpdateRoomInfoRequest();
+        ReflectionTestUtils.setField(req, "roomName", "변경된팀방");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(ownerMember));
+        given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> inv.getArgument(0));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(roomMember(userA), roomMember(userB)));
+
+        ChatRoomDetailResponse result = chatService.updateRoomInfo("a@test.com", 1L, req);
+
+        assertThat(result.getRoomName()).isEqualTo("변경된팀방");
+        // 멤버 2명에게 ROOM_RENAMED 전파
+        verify(messagingTemplate).convertAndSendToUser(eq("a@test.com"), eq("/queue/notifications"), any(NotificationPayload.class));
+        verify(messagingTemplate).convertAndSendToUser(eq("b@test.com"), eq("/queue/notifications"), any(NotificationPayload.class));
     }
 
     @Test
@@ -500,10 +583,51 @@ class ChatServiceTest {
 
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
         given(userRepository.findById("b@test.com")).willReturn(Optional.of(userB));
-        given(chatRoomRepository.findSharedNonTeamRooms(userA, userB)).willReturn(List.of(existing));
+        // 정확히 2명 일치하는 방이 있으면 재사용(중복 생성 안 함, 버그 항목27 + I-2)
+        given(chatRoomRepository.findDmRoom(userA, userB)).willReturn(Optional.of(existing));
 
         ChatRoomResponse resp = chatService.getOrCreateDmRoom("a@test.com", "b@test.com");
 
-        assertThat(resp.getRoomIdx()).isEqualTo(3L);  // 기존 방 재사용(중복 생성 안 함, 버그 항목27)
+        assertThat(resp.getRoomIdx()).isEqualTo(3L);
+    }
+
+    @Test
+    void 나가기_마지막_1명_남으면_방_유지() {
+        // 카카오톡식(I-2): 한 명 나가도 1명 남으면 휴면방으로 유지(소프트딜리트 안 함)
+        RoomMember rm = new RoomMember();
+        ReflectionTestUtils.setField(rm, "user", userA);
+        ReflectionTestUtils.setField(rm, "role", "MEMBER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(rm));
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
+        // 나간 뒤에도 1명(userB) 남음
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(roomMember(userB)));
+
+        chatService.leaveRoom("a@test.com", 1L);
+
+        assertThat(room.getDelDate()).isNull();
+    }
+
+    @Test
+    void 나가기_마지막_0명이면_방_소프트딜리트() {
+        // 카카오톡식(I-2): 마지막 멤버가 나가 활성 0명이면 채팅방 소프트딜리트
+        RoomMember rm = new RoomMember();
+        ReflectionTestUtils.setField(rm, "user", userA);
+        ReflectionTestUtils.setField(rm, "role", "MEMBER");
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(userA));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, userA)).willReturn(Optional.of(rm));
+        given(roomMemberRepository.save(any(RoomMember.class))).willAnswer(inv -> inv.getArgument(0));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of());
+        given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> inv.getArgument(0));
+
+        chatService.leaveRoom("a@test.com", 1L);
+
+        assertThat(room.getDelDate()).isNotNull();
     }
 }

@@ -23,6 +23,10 @@ public class ChatRoom {
     @Column(name = "room_name", length = 255)
     private String roomName;
 
+    // 이름이 직접 변경됐는지(I-13/후속). 2인 DM도 custom_name이면 사이드바에 커스텀 이름 표시.
+    @Column(name = "custom_name")
+    private Boolean customName;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
