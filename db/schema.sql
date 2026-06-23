@@ -68,7 +68,7 @@ CREATE TABLE `files` (
   `new_filename` varchar(40) NOT NULL,
   `ori_filename` varchar(100) DEFAULT NULL,
   `file_path` varchar(255) DEFAULT NULL,
-  `file_type` varchar(10) DEFAULT NULL,
+  `file_type` varchar(100) DEFAULT NULL,
   `file_extension` varchar(10) DEFAULT NULL,
   `file_size` bigint(20) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),

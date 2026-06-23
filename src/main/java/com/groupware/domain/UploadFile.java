@@ -35,7 +35,8 @@ public class UploadFile {
     @Column(name = "file_path", length = 255)
     private String filePath;
 
-    @Column(name = "file_type", length = 10)
+    // MIME 타입 보관(예: xlsx 65자) — varchar(10)은 짧아 100으로 확장(*추가3)
+    @Column(name = "file_type", length = 100)
     private String fileType;
 
     @Column(name = "file_extension", length = 10)
