@@ -121,7 +121,7 @@ class FileServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
-        given(uploadFileRepository.findByChatRoomOrderByCreatedAtDesc(room)).willReturn(List.of(f));
+        given(uploadFileRepository.findNormalFilesByChatRoom(room)).willReturn(List.of(f));
 
         List<FileResponseDto> result = fileService.getFiles("a@test.com", 1L);
 
@@ -186,5 +186,72 @@ class FileServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FILE_NOT_FOUND);
+    }
+
+    // ───────────────────────── [I] 녹음 파일 관리 ─────────────────────────
+
+    @Test
+    void 녹음_업로드_성공_RECORDING타입_30일만료_채팅메시지미생성() {
+        MockMultipartFile rec = new MockMultipartFile(
+                "file", "녹음.webm", "audio/webm", new byte[200]);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(uploadFileRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        FileResponseDto result = fileService.uploadRecording("a@test.com", 1L, rec);
+
+        ArgumentCaptor<UploadFile> captor = ArgumentCaptor.forClass(UploadFile.class);
+        verify(uploadFileRepository).save(captor.capture());
+        UploadFile saved = captor.getValue();
+        assertThat(saved.getFileType()).isEqualTo(FileService.RECORDING_FILE_TYPE);
+        assertThat(saved.getExpiresAt()).isNotNull();
+        // 만료일이 약 30일 뒤(±1일 허용)
+        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now().plusDays(29));
+        assertThat(saved.getExpiresAt()).isBefore(LocalDateTime.now().plusDays(31));
+        // 녹음은 채팅 메시지를 만들지 않는다
+        verify(messageRepository, org.mockito.Mockito.never()).save(any());
+        assertThat(result.getExpiresAt()).isNotNull();
+    }
+
+    @Test
+    void 녹음_50MB_초과_실패() {
+        byte[] big = new byte[(int)(50L * 1024 * 1024 + 1)];
+        MockMultipartFile rec = new MockMultipartFile("file", "big.webm", "audio/webm", big);
+
+        assertThatThrownBy(() -> fileService.uploadRecording("a@test.com", 1L, rec))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FILE_SIZE_EXCEEDED);
+    }
+
+    @Test
+    void 녹음_목록_조회_만료전만() {
+        UploadFile r = makeUploadFile(5L);
+        ReflectionTestUtils.setField(r, "expiresAt", LocalDateTime.now().plusDays(10));
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(uploadFileRepository.findActiveRecordingsByChatRoom(eq(room), any())).willReturn(List.of(r));
+
+        List<FileResponseDto> result = fileService.getRecordings("a@test.com", 1L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getFileIdx()).isEqualTo(5L);
+        // 일반 파일 목록 쿼리는 호출되지 않음(녹음 전용 쿼리만)
+        verify(uploadFileRepository).findActiveRecordingsByChatRoom(eq(room), any());
+    }
+
+    @Test
+    void 만료녹음_정리_물리파일_레코드_삭제() {
+        UploadFile expired = makeUploadFile(7L);
+        ReflectionTestUtils.setField(expired, "expiresAt", LocalDateTime.now().minusDays(1));
+        given(uploadFileRepository.findExpiredRecordings(any())).willReturn(List.of(expired));
+
+        int count = fileService.deleteExpiredRecordings();
+
+        assertThat(count).isEqualTo(1);
+        verify(uploadFileRepository).deleteAll(List.of(expired));
     }
 }

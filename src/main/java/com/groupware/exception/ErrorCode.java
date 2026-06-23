@@ -51,6 +51,7 @@ public enum ErrorCode {
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "일정을 찾을 수 없습니다."),
     MEETING_NOTE_NOT_FOUND(HttpStatus.NOT_FOUND, "회의록을 찾을 수 없습니다."),
     MEETING_NOTE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "회의록에 대한 권한이 없습니다."),
+    MEETING_NOTE_DELETE_DENIED(HttpStatus.FORBIDDEN, "회의록 삭제 권한이 없습니다. (작성자 또는 방장/팀 리더·매니저만 가능)"),
     NO_MESSAGES_IN_RANGE(HttpStatus.BAD_REQUEST, "선택한 시간 범위에 메시지가 없습니다."),
     NO_AUDIO_FILES(HttpStatus.BAD_REQUEST, "오디오 파일이 없습니다."),
     AUDIO_TOO_LARGE(HttpStatus.BAD_REQUEST, "오디오 파일 크기는 15MB를 초과할 수 없습니다."),

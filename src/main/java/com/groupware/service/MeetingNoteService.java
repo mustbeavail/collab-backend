@@ -1,9 +1,13 @@
 package com.groupware.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.groupware.domain.ChatRoom;
 import com.groupware.domain.MeetingNote;
 import com.groupware.domain.Message;
+import com.groupware.domain.TeamMember;
 import com.groupware.domain.User;
+import com.groupware.dto.minutes.MinutesTimeRangeResponse;
 import com.groupware.dto.minutes.AiGenerateRequest;
 import com.groupware.dto.minutes.CreateMeetingNoteRequest;
 import com.groupware.dto.minutes.MeetingNoteResponse;
@@ -44,6 +48,7 @@ public class MeetingNoteService {
 
     private static final DateTimeFormatter DISPLAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter MSG_FMT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Transactional(readOnly = true)
     public List<MeetingNoteResponse> getNotesByRoom(String userId, Long roomIdx) {
@@ -53,6 +58,17 @@ public class MeetingNoteService {
         return meetingNoteRepository
                 .findByChatRoomRoomIdxAndDelAtIsNullOrderByCreatedAtDesc(roomIdx)
                 .stream().map(MeetingNoteResponse::from).collect(Collectors.toList());
+    }
+
+    // 항목2(일정이후): AI 회의록 시간범위 디폴트 — 방의 가장 오래된/최신 메시지 시각
+    @Transactional(readOnly = true)
+    public MinutesTimeRangeResponse getMessageTimeRange(String userId, Long roomIdx) {
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
+        checkAccess(room, user);
+        return MinutesTimeRangeResponse.of(
+                messageRepository.findEarliestSentAt(roomIdx),
+                messageRepository.findLatestSentAt(roomIdx));
     }
 
     @Transactional
@@ -88,7 +104,8 @@ public class MeetingNoteService {
         User user = getActiveUser(userId);
         checkAccess(room, user);
 
-        List<Message> messages = messageRepository.findTextMessagesByRoomAndTimeRange(
+        // 항목4(일정이후): TEXT + FILE 메시지 모두 포함(파일은 '이름 : 파일명'으로 정리)
+        List<Message> messages = messageRepository.findMessagesForMinutes(
                 roomIdx, req.getStartTime(), req.getEndTime());
 
         if (messages.isEmpty()) {
@@ -113,8 +130,14 @@ public class MeetingNoteService {
         StringBuilder log = new StringBuilder();
         for (Message m : messages) {
             log.append("[").append(m.getSentAt().format(MSG_FMT)).append("] ")
-               .append(m.getUser().getNick()).append(": ")
-               .append(m.getContent()).append("\n");
+               .append(m.getUser().getNick());
+            if ("FILE".equals(m.getMsgType())) {
+                // 항목4: 파일 전송 메시지는 '이름 : (파일 전송) 파일명' 형식으로 포함
+                log.append(" : (파일 전송) ").append(extractFileName(m.getContent()));
+            } else {
+                log.append(": ").append(m.getContent());
+            }
+            log.append("\n");
         }
 
         return """
@@ -138,6 +161,18 @@ public class MeetingNoteService {
                 (후속 할 일, 담당자, 기한 등)
 
                 ---대화 기록 (""" + messages.size() + "개 메시지)---\n" + log.toString();
+    }
+
+    // FILE 메시지 content(JSON: {fileIdx, oriFilename, ...})에서 파일명 추출. 실패 시 '파일'.
+    private String extractFileName(String content) {
+        if (content == null || content.isBlank()) return "파일";
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(content);
+            String name = node.path("oriFilename").asText(null);
+            return (name != null && !name.isBlank()) ? name : "파일";
+        } catch (Exception e) {
+            return "파일";
+        }
     }
 
     @Transactional
@@ -180,8 +215,35 @@ public class MeetingNoteService {
         MeetingNote note = meetingNoteRepository.findByNoteIdxAndDelAtIsNull(noteIdx)
                 .orElseThrow(() -> new CustomException(ErrorCode.MEETING_NOTE_NOT_FOUND));
         User user = getActiveUser(userId);
-        checkAccess(note.getChatRoom(), user);
+        ChatRoom room = note.getChatRoom();
+        checkAccess(room, user);
+        // 항목6(일정이후): 삭제는 작성자 본인 OR 방장(비팀방)/팀 리더·매니저(팀방)만
+        if (!canDelete(note, room, user)) {
+            throw new CustomException(ErrorCode.MEETING_NOTE_DELETE_DENIED);
+        }
         note.setDelAt(LocalDateTime.now());
+    }
+
+    private boolean canDelete(MeetingNote note, ChatRoom room, User user) {
+        // 작성자 본인은 항상 삭제 가능
+        if (note.getUser().getUserId().equals(user.getUserId())) {
+            return true;
+        }
+        if (room.getTeam() != null) {
+            // 팀 채팅방: 팀 리더·매니저만
+            String role = teamMemberRepository
+                    .findActiveByTeamIdxAndUserId(room.getTeam().getTeamIdx(), user.getUserId())
+                    .map(TeamMember::getRole)
+                    .orElse(null);
+            return "LEADER".equals(role) || "MANAGER".equals(role);
+        } else {
+            // 비팀 채팅방: 방장(OWNER)만
+            String role = roomMemberRepository
+                    .findByChatRoomAndUserAndExitAtIsNull(room, user)
+                    .map(com.groupware.domain.RoomMember::getRole)
+                    .orElse(null);
+            return "OWNER".equals(role);
+        }
     }
 
     private ChatRoom getActiveRoom(Long roomIdx) {

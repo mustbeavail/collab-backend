@@ -30,6 +30,7 @@ import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +39,8 @@ import java.util.UUID;
 public class FileService {
 
     private static final long MAX_FILE_SIZE = 50L * 1024 * 1024; // 50MB
+    private static final int  RECORDING_RETENTION_DAYS = 30;     // [I] 녹음 보관 기간(30일)
+    public  static final String RECORDING_FILE_TYPE = "RECORDING"; // [I] 녹음 식별용 file_type 마커
 
     private final UploadFileRepository uploadFileRepository;
     private final ChatRoomRepository chatRoomRepository;
@@ -63,7 +66,8 @@ public class FileService {
 
         String oriFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown";
         String ext = extractExtension(oriFilename);
-        String newFilename = UUID.randomUUID() + (ext.isEmpty() ? "" : "." + ext);
+        // new_filename은 varchar(40). UUID(36)+"."+ext(최대4~)가 40 초과 가능 → 하이픈 제거(32자)로 여유 확보.
+        String newFilename = UUID.randomUUID().toString().replace("-", "") + (ext.isEmpty() ? "" : "." + ext);
         String mimeType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
 
         Path filesDir = Paths.get(uploadDir, "files");
@@ -88,16 +92,86 @@ public class FileService {
         return FileResponseDto.from(uploadFile);
     }
 
+    // [I] 음성/화상 채팅 녹음 업로드(항목20·21): 일반 파일과 달리 채팅 메시지를 만들지 않고,
+    // file_type='RECORDING' + expires_at=now+30일로 저장한다. 만료 시 스케줄러가 삭제.
+    @Transactional
+    public FileResponseDto uploadRecording(String userId, Long roomIdx, MultipartFile file) {
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new CustomException(ErrorCode.FILE_SIZE_EXCEEDED);
+        }
+
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
+        checkAccess(room, user);
+
+        String oriFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "recording.webm";
+        String ext = extractExtension(oriFilename);
+        // new_filename은 varchar(40). UUID(36)+"."+ext(최대4~)가 40 초과 가능 → 하이픈 제거(32자)로 여유 확보.
+        String newFilename = UUID.randomUUID().toString().replace("-", "") + (ext.isEmpty() ? "" : "." + ext);
+
+        Path filesDir = Paths.get(uploadDir, "files");
+        try {
+            Files.createDirectories(filesDir);
+            Files.copy(file.getInputStream(), filesDir.resolve(newFilename));
+        } catch (IOException e) {
+            throw new CustomException(ErrorCode.FILE_UPLOAD_FAILED);
+        }
+
+        UploadFile uploadFile = new UploadFile();
+        uploadFile.setUser(user);
+        uploadFile.setChatRoom(room);
+        uploadFile.setOriFilename(oriFilename);
+        uploadFile.setNewFilename(newFilename);
+        uploadFile.setFilePath("/files/" + newFilename);
+        uploadFile.setFileType(RECORDING_FILE_TYPE);
+        uploadFile.setFileExtension(ext);
+        uploadFile.setFileSize(file.getSize());
+        uploadFile.setExpiresAt(LocalDateTime.now().plusDays(RECORDING_RETENTION_DAYS));
+        uploadFile = uploadFileRepository.save(uploadFile);
+
+        return FileResponseDto.from(uploadFile);
+    }
+
     @Transactional(readOnly = true)
     public List<FileResponseDto> getFiles(String userId, Long roomIdx) {
         ChatRoom room = getActiveRoom(roomIdx);
         User user = getActiveUser(userId);
         checkAccess(room, user);
 
-        return uploadFileRepository.findByChatRoomOrderByCreatedAtDesc(room)
+        // 녹음 파일(expires_at NOT NULL)은 제외하고 일반 파일만 반환
+        return uploadFileRepository.findNormalFilesByChatRoom(room)
                 .stream()
                 .map(FileResponseDto::from)
                 .toList();
+    }
+
+    // [I] 녹음 목록(만료 전만) 반환
+    @Transactional(readOnly = true)
+    public List<FileResponseDto> getRecordings(String userId, Long roomIdx) {
+        ChatRoom room = getActiveRoom(roomIdx);
+        User user = getActiveUser(userId);
+        checkAccess(room, user);
+
+        return uploadFileRepository.findActiveRecordingsByChatRoom(room, LocalDateTime.now())
+                .stream()
+                .map(FileResponseDto::from)
+                .toList();
+    }
+
+    // [I] 만료된 녹음 정리(스케줄러 호출용) — 물리 파일 + 레코드 삭제, 삭제 건수 반환
+    @Transactional
+    public int deleteExpiredRecordings() {
+        List<UploadFile> expired = uploadFileRepository.findExpiredRecordings(LocalDateTime.now());
+        for (UploadFile f : expired) {
+            Path filePath = Paths.get(uploadDir, "files", f.getNewFilename());
+            try {
+                Files.deleteIfExists(filePath);
+            } catch (IOException ignored) { }
+        }
+        if (!expired.isEmpty()) {
+            uploadFileRepository.deleteAll(expired);
+        }
+        return expired.size();
     }
 
     @Transactional(readOnly = true)

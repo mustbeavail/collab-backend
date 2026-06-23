@@ -21,6 +21,17 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.chatRoom.roomIdx = :roomIdx AND m.sentAt BETWEEN :start AND :end AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType = 'TEXT' ORDER BY m.sentAt ASC")
     List<Message> findTextMessagesByRoomAndTimeRange(@Param("roomIdx") Long roomIdx, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
+    // 항목4(일정이후 추가): AI 회의록 프롬프트에 TEXT + FILE 메시지 모두 포함(파일 메시지는 '이름 : 파일명'으로 정리)
+    @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.chatRoom.roomIdx = :roomIdx AND m.sentAt BETWEEN :start AND :end AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType IN ('TEXT', 'FILE') ORDER BY m.sentAt ASC")
+    List<Message> findMessagesForMinutes(@Param("roomIdx") Long roomIdx, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    // 항목2(일정이후 추가): AI 회의록 시간범위 디폴트 — 방의 가장 오래된/최신 메시지 시각(삭제 제외, TEXT+FILE)
+    @Query("SELECT MIN(m.sentAt) FROM Message m WHERE m.chatRoom.roomIdx = :roomIdx AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType IN ('TEXT', 'FILE')")
+    LocalDateTime findEarliestSentAt(@Param("roomIdx") Long roomIdx);
+
+    @Query("SELECT MAX(m.sentAt) FROM Message m WHERE m.chatRoom.roomIdx = :roomIdx AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType IN ('TEXT', 'FILE')")
+    LocalDateTime findLatestSentAt(@Param("roomIdx") Long roomIdx);
+
     @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.chatRoom.roomIdx = :roomIdx AND (m.delYn IS NULL OR m.delYn = false) AND m.msgType = 'TEXT' AND m.content LIKE %:q% ORDER BY m.sentAt DESC")
     List<Message> searchByContent(@Param("roomIdx") Long roomIdx, @Param("q") String q, Pageable pageable);
 

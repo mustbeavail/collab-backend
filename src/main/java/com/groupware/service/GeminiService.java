@@ -22,11 +22,14 @@ public class GeminiService {
     private static final String GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
     private static final long MAX_INLINE_AUDIO_BYTES = 15L * 1024 * 1024;
+    // 항목23(일정이후): 음성 파일을 처음부터 끝까지 빠짐없이 전체 속기하도록 명시(이전엔 일부만 속기되던 문제).
     private static final String AUDIO_MINUTES_PROMPT =
-            "위 음성/영상 파일은 팀 회의 녹음입니다. 내용을 듣고 한국어로 회의록을 작성해 주세요.\n\n" +
+            "위 음성/영상 파일은 팀 회의 녹음입니다. 파일의 처음부터 끝까지 전체를 빠짐없이 듣고 한국어로 회의록을 작성해 주세요.\n\n" +
+            "매우 중요: '대화 전문' 항목은 녹음의 시작부터 끝까지 모든 발언을 시간 순서대로 빠짐없이 받아써야 합니다. " +
+            "중간을 생략하거나 요약하지 말고, 발언 전체를 끝까지 속기하세요. 분량이 길어도 마지막 발언까지 반드시 포함하세요.\n\n" +
             "회의록은 반드시 아래 형식을 따르세요:\n\n" +
             "## 참석자\n(발언자 목록)\n\n" +
-            "## 대화 전문\n(주요 대화 내용을 원문에 가깝게 정리)\n\n" +
+            "## 대화 전문\n(녹음 처음부터 끝까지 모든 발언을 시간순으로 빠짐없이 받아쓰기 — 생략·요약 금지)\n\n" +
             "## 주요 논의 내용\n(핵심 안건과 논의 사항을 항목별로 정리)\n\n" +
             "## 결정사항\n(회의에서 결정된 내용)\n\n" +
             "## 액션 아이템\n(후속 할 일, 담당자, 기한 등)";
@@ -52,7 +55,7 @@ public class GeminiService {
                 )),
                 "generationConfig", Map.of(
                         "temperature", 0.7,
-                        "maxOutputTokens", 8192
+                        "maxOutputTokens", 65536
                 )
         );
 
@@ -74,7 +77,8 @@ public class GeminiService {
                                 Map.of("text", AUDIO_MINUTES_PROMPT)
                         )
                 )),
-                "generationConfig", Map.of("temperature", 0.7, "maxOutputTokens", 8192)
+                // 항목23: 전체 속기가 8192 토큰에서 잘리던 문제 → gemini-2.5-flash 출력 한계(65536)까지 허용
+                "generationConfig", Map.of("temperature", 0.7, "maxOutputTokens", 65536)
         );
 
         return callGemini(url, body);

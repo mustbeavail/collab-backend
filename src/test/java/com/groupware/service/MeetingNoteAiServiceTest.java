@@ -78,6 +78,12 @@ class MeetingNoteAiServiceTest {
         return m;
     }
 
+    private Message makeFileMessage(String nick, String oriFilename, LocalDateTime sentAt) {
+        Message m = makeMessage(nick, "{\"fileIdx\":5,\"oriFilename\":\"" + oriFilename + "\",\"fileSize\":100,\"fileExtension\":\"pdf\"}", sentAt);
+        ReflectionTestUtils.setField(m, "msgType", "FILE");
+        return m;
+    }
+
     private AiGenerateRequest makeRequest(LocalDateTime start, LocalDateTime end) {
         AiGenerateRequest req = new AiGenerateRequest();
         ReflectionTestUtils.setField(req, "startTime", start);
@@ -93,7 +99,7 @@ class MeetingNoteAiServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
-        given(messageRepository.findTextMessagesByRoomAndTimeRange(1L, start, end)).willReturn(List.of(
+        given(messageRepository.findMessagesForMinutes(1L, start, end)).willReturn(List.of(
                 makeMessage("Alice", "안녕하세요", start.plusMinutes(1)),
                 makeMessage("Bob",   "오늘 회의 시작하겠습니다", start.plusMinutes(2))
         ));
@@ -117,6 +123,34 @@ class MeetingNoteAiServiceTest {
     }
 
     @Test
+    void AI_회의록_파일메시지_프롬프트에_파일명_포함() {
+        // 항목4(일정이후): 파일 전송 메시지도 '이름 : (파일 전송) 파일명' 형식으로 프롬프트에 포함
+        LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
+        LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
+
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findMessagesForMinutes(1L, start, end)).willReturn(List.of(
+                makeMessage("Alice", "자료 공유합니다", start.plusMinutes(1)),
+                makeFileMessage("Alice", "설계서.pdf", start.plusMinutes(2))
+        ));
+        given(geminiService.generateContent(anyString())).willReturn("## 참석자\nAlice");
+        given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
+            MeetingNote n = inv.getArgument(0);
+            ReflectionTestUtils.setField(n, "noteIdx", 11L);
+            ReflectionTestUtils.setField(n, "createdAt", LocalDateTime.now());
+            return n;
+        });
+
+        meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end));
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(geminiService).generateContent(promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).contains("(파일 전송) 설계서.pdf");
+    }
+
+    @Test
     void AI_회의록_메시지없음_예외() {
         LocalDateTime start = LocalDateTime.of(2026, 6, 7, 10, 0);
         LocalDateTime end   = LocalDateTime.of(2026, 6, 7, 11, 0);
@@ -124,7 +158,7 @@ class MeetingNoteAiServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
-        given(messageRepository.findTextMessagesByRoomAndTimeRange(anyLong(), any(), any()))
+        given(messageRepository.findMessagesForMinutes(anyLong(), any(), any()))
                 .willReturn(Collections.emptyList());
 
         assertThatThrownBy(() -> meetingNoteService.generateAiMinutes("a@test.com", 1L, makeRequest(start, end)))
@@ -140,7 +174,7 @@ class MeetingNoteAiServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
-        given(messageRepository.findTextMessagesByRoomAndTimeRange(1L, start, end))
+        given(messageRepository.findMessagesForMinutes(1L, start, end))
                 .willReturn(List.of(makeMessage("Alice", "테스트", start.plusMinutes(1))));
         given(geminiService.generateContent(anyString()))
                 .willThrow(new CustomException(ErrorCode.AI_GENERATION_FAILED));

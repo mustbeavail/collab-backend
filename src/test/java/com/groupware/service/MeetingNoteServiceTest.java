@@ -2,10 +2,15 @@ package com.groupware.service;
 
 import com.groupware.domain.ChatRoom;
 import com.groupware.domain.MeetingNote;
+import com.groupware.domain.RoomMember;
+import com.groupware.domain.Team;
+import com.groupware.domain.TeamMember;
 import com.groupware.domain.User;
 import com.groupware.dto.minutes.CreateMeetingNoteRequest;
 import com.groupware.dto.minutes.MeetingNoteResponse;
+import com.groupware.dto.minutes.MinutesTimeRangeResponse;
 import com.groupware.dto.minutes.UpdateMeetingNoteRequest;
+import com.groupware.repository.MessageRepository;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.ChatRoomRepository;
@@ -39,6 +44,7 @@ class MeetingNoteServiceTest {
     @Mock private RoomMemberRepository roomMemberRepository;
     @Mock private TeamMemberRepository teamMemberRepository;
     @Mock private UserRepository userRepository;
+    @Mock private MessageRepository messageRepository;
 
     private User user;
     private ChatRoom room;
@@ -194,7 +200,8 @@ class MeetingNoteServiceTest {
     // ── 삭제 ────────────────────────────────────────────────
 
     @Test
-    void 회의록_삭제_성공() {
+    void 회의록_삭제_작성자본인_성공() {
+        // 항목6: 작성자 본인은 권한 무관하게 항상 삭제 가능
         MeetingNote existing = makeNote(1L, "삭제할 회의록", null);
 
         given(meetingNoteRepository.findByNoteIdxAndDelAtIsNull(1L)).willReturn(Optional.of(existing));
@@ -207,11 +214,112 @@ class MeetingNoteServiceTest {
     }
 
     @Test
+    void 회의록_삭제_작성자아님_방장_성공() {
+        // 항목6: 비팀 채팅방 — 작성자가 아니어도 방장(OWNER)이면 삭제 가능
+        User other = new User();
+        ReflectionTestUtils.setField(other, "userId", "b@test.com");
+        ReflectionTestUtils.setField(other, "nick", "Bob");
+        MeetingNote noteByOther = makeNote(1L, "남의 회의록", null);
+        ReflectionTestUtils.setField(noteByOther, "user", other);
+
+        RoomMember ownerMember = new RoomMember();
+        ReflectionTestUtils.setField(ownerMember, "role", "OWNER");
+
+        given(meetingNoteRepository.findByNoteIdxAndDelAtIsNull(1L)).willReturn(Optional.of(noteByOther));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(Optional.of(ownerMember));
+
+        meetingNoteService.deleteNote("a@test.com", 1L);
+
+        assertThat(noteByOther.getDelAt()).isNotNull();
+    }
+
+    @Test
+    void 회의록_삭제_작성자아님_일반멤버_권한없음_예외() {
+        // 항목6: 비팀 채팅방 — 작성자도 방장도 아닌 일반 멤버는 삭제 불가
+        User other = new User();
+        ReflectionTestUtils.setField(other, "userId", "b@test.com");
+        ReflectionTestUtils.setField(other, "nick", "Bob");
+        MeetingNote noteByOther = makeNote(1L, "남의 회의록", null);
+        ReflectionTestUtils.setField(noteByOther, "user", other);
+
+        RoomMember plainMember = new RoomMember();
+        ReflectionTestUtils.setField(plainMember, "role", "MEMBER");
+
+        given(meetingNoteRepository.findByNoteIdxAndDelAtIsNull(1L)).willReturn(Optional.of(noteByOther));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(Optional.of(plainMember));
+
+        assertThatThrownBy(() -> meetingNoteService.deleteNote("a@test.com", 1L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.MEETING_NOTE_DELETE_DENIED);
+    }
+
+    @Test
+    void 회의록_삭제_팀채팅방_리더_성공() {
+        // 항목6: 팀 채팅방 — 작성자가 아니어도 팀 리더/매니저면 삭제 가능
+        Team team = new Team();
+        ReflectionTestUtils.setField(team, "teamIdx", 7L);
+        ChatRoom teamRoom = new ChatRoom();
+        ReflectionTestUtils.setField(teamRoom, "roomIdx", 2L);
+        ReflectionTestUtils.setField(teamRoom, "team", team);
+
+        User other = new User();
+        ReflectionTestUtils.setField(other, "userId", "b@test.com");
+        MeetingNote noteByOther = makeNote(1L, "팀 회의록", null);
+        ReflectionTestUtils.setField(noteByOther, "user", other);
+        ReflectionTestUtils.setField(noteByOther, "chatRoom", teamRoom);
+
+        TeamMember leader = new TeamMember();
+        ReflectionTestUtils.setField(leader, "role", "LEADER");
+
+        given(meetingNoteRepository.findByNoteIdxAndDelAtIsNull(1L)).willReturn(Optional.of(noteByOther));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(teamMemberRepository.findActiveByTeamIdxAndUserId(7L, "a@test.com")).willReturn(Optional.of(leader));
+
+        meetingNoteService.deleteNote("a@test.com", 1L);
+
+        assertThat(noteByOther.getDelAt()).isNotNull();
+    }
+
+    @Test
     void 회의록_삭제_없는회의록_예외() {
         given(meetingNoteRepository.findByNoteIdxAndDelAtIsNull(99L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> meetingNoteService.deleteNote("a@test.com", 99L))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.MEETING_NOTE_NOT_FOUND);
+    }
+
+    // ── 시간범위(항목2) ──────────────────────────────────────
+
+    @Test
+    void 메시지_시간범위_조회_성공() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findEarliestSentAt(1L)).willReturn(LocalDateTime.of(2026, 6, 1, 9, 0));
+        given(messageRepository.findLatestSentAt(1L)).willReturn(LocalDateTime.of(2026, 6, 1, 18, 30));
+
+        MinutesTimeRangeResponse r = meetingNoteService.getMessageTimeRange("a@test.com", 1L);
+
+        assertThat(r.getStart()).isEqualTo("2026-06-01T09:00");
+        assertThat(r.getEnd()).isEqualTo("2026-06-01T18:30");
+    }
+
+    @Test
+    void 메시지_시간범위_조회_메시지없으면_null() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(messageRepository.findEarliestSentAt(1L)).willReturn(null);
+        given(messageRepository.findLatestSentAt(1L)).willReturn(null);
+
+        MinutesTimeRangeResponse r = meetingNoteService.getMessageTimeRange("a@test.com", 1L);
+
+        assertThat(r.getStart()).isNull();
+        assertThat(r.getEnd()).isNull();
     }
 }

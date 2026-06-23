@@ -17,6 +17,7 @@ public class FileResponseDto {
     private LocalDateTime createdAt;
     private String uploaderNickname;
     private String uploaderId;
+    private LocalDateTime expiresAt; // [I] 녹음 파일 만료일시(일반 파일은 null)
 
     public static FileResponseDto from(UploadFile f) {
         return FileResponseDto.builder()
@@ -27,6 +28,7 @@ public class FileResponseDto {
                 .createdAt(f.getCreatedAt())
                 .uploaderNickname(f.getUser().getNick())
                 .uploaderId(f.getUser().getUserId())
+                .expiresAt(f.getExpiresAt())
                 .build();
     }
 }

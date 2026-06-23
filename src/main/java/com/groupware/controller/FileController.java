@@ -41,6 +41,25 @@ public class FileController {
         return ResponseEntity.ok(ApiResponse.ok(files));
     }
 
+    // [I] 음성/화상 녹음 업로드(중지 시 서버 보관, 채팅 메시지 미생성)
+    @PostMapping(value = "/recordings", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<FileResponseDto>> uploadRecording(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam Long roomIdx,
+            @RequestPart MultipartFile file) {
+        FileResponseDto dto = fileService.uploadRecording(userDetails.getUsername(), roomIdx, file);
+        return ResponseEntity.ok(ApiResponse.ok(dto));
+    }
+
+    // [I] 녹음 목록(만료 전만)
+    @GetMapping("/recordings")
+    public ResponseEntity<ApiResponse<List<FileResponseDto>>> getRecordings(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam Long roomIdx) {
+        List<FileResponseDto> recordings = fileService.getRecordings(userDetails.getUsername(), roomIdx);
+        return ResponseEntity.ok(ApiResponse.ok(recordings));
+    }
+
     @GetMapping("/{fileIdx}/download")
     public ResponseEntity<Resource> download(
             @AuthenticationPrincipal UserDetails userDetails,

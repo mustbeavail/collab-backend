@@ -4,6 +4,7 @@ import com.groupware.dto.common.ApiResponse;
 import com.groupware.dto.minutes.AiGenerateRequest;
 import com.groupware.dto.minutes.CreateMeetingNoteRequest;
 import com.groupware.dto.minutes.MeetingNoteResponse;
+import com.groupware.dto.minutes.MinutesTimeRangeResponse;
 import com.groupware.dto.minutes.UpdateMeetingNoteRequest;
 import com.groupware.service.MeetingNoteService;
 import jakarta.validation.Valid;
@@ -29,6 +30,15 @@ public class MeetingNoteController {
             @PathVariable Long roomIdx) {
         return ResponseEntity.ok(ApiResponse.ok(
                 meetingNoteService.getNotesByRoom(userDetails.getUsername(), roomIdx)));
+    }
+
+    // 항목2(일정이후): AI 회의록 시간범위 디폴트(방의 가장 오래된~최신 메시지 시각)
+    @GetMapping("/rooms/{roomIdx}/time-range")
+    public ResponseEntity<ApiResponse<MinutesTimeRangeResponse>> getMessageTimeRange(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable Long roomIdx) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                meetingNoteService.getMessageTimeRange(userDetails.getUsername(), roomIdx)));
     }
 
     @PostMapping("/rooms/{roomIdx}/voice-generate")

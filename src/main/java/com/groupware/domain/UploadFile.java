@@ -47,4 +47,8 @@ public class UploadFile {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    // [I] 녹음 파일 만료일시. null = 일반 파일(영구 보관). not null = 녹음 파일(만료 시 스케줄러가 삭제).
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
 }
