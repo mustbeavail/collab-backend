@@ -1,6 +1,6 @@
 -- ============================================================
 -- Collab DB 스키마 (database: collab_test)
--- mysqldump --no-data 기반 / 최종 갱신: 2026-06-09
+-- 최종 상태 단일 스냅샷 / 최종 갱신: 2026-06-24
 --
 -- [목적] 새 환경 구축 시 이 파일로 테이블을 먼저 생성한다.
 --   백엔드는 spring.jpa.hibernate.ddl-auto=validate 이므로,
@@ -11,11 +11,15 @@
 --   mysql -u <user> -p collab_test < db/schema.sql
 --
 -- [규칙] JPA 엔티티 변경 시 이 파일도 반드시 함께 갱신한다.
+--   (별도 migration_*.sql 파일은 폐지하고, 이 schema.sql 하나로 최신 상태를 관리한다.)
 --
--- [2026-06-09 반영] users.user_id 참조 자식 FK에 ON UPDATE CASCADE 설정
---   (탈퇴 회원 재가입 시 user_id rename → 자식 자동 갱신). users.nick UNIQUE 추가
---   (탈퇴 회원은 nick=NULL 로 비워 재사용 허용). 기존 DB 적용은
---   db/migration_20260609_fk_cascade_nick_unique.sql 참조.
+-- [반영된 누적 변경 — 기존 운영 DB에는 아래 내용이 적용돼 있어야 부팅됨]
+--   · users.user_id 참조 자식 FK에 ON UPDATE CASCADE (탈퇴 회원 재가입 시 자동 갱신)
+--   · users.nick UNIQUE (탈퇴 회원은 nick=NULL 로 비워 재사용 허용)
+--   · schedule.lat/longt decimal(11,8) (한국 경도 위치일정)
+--   · chat_rooms.custom_name (DM 커스텀 방제)
+--   · files.expires_at + idx_files_expires_at (녹음 30일 보관/만료)
+--   · files.file_type varchar(100) (xlsx 등 긴 MIME 첨부)
 -- ============================================================
 
 /*M!999999\- enable the sandbox mode */
