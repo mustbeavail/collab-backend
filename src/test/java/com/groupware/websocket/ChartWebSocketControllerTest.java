@@ -6,6 +6,7 @@ import com.groupware.dto.chart.ChartSharePayload;
 import com.groupware.exception.CustomException;
 import com.groupware.exception.ErrorCode;
 import com.groupware.repository.UserRepository;
+import com.groupware.service.ChartStateStore;
 import com.groupware.service.RoomMembershipChecker;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +31,7 @@ class ChartWebSocketControllerTest {
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private UserRepository userRepository;
     @Mock private RoomMembershipChecker roomMembershipChecker;
+    @Mock private ChartStateStore chartStateStore;
 
     private Principal principal(String name) {
         return () -> name;
@@ -51,6 +53,8 @@ class ChartWebSocketControllerTest {
         verify(messagingTemplate).convertAndSend(eq("/topic/chart/1"), captor.capture());
         assertThat(captor.getValue().getFromUserId()).isEqualTo("alice@test.com");
         assertThat(captor.getValue().getFromNickname()).isEqualTo("Alice");
+        // 항목4: 나중에 패널 여는 사용자를 위해 서버에 최신 차트 보관
+        verify(chartStateStore).put(eq(1L), any(ChartSharePayload.class));
     }
 
     @Test
