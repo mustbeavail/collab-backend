@@ -16,6 +16,7 @@ import com.groupware.repository.RoomMemberRepository;
 import com.groupware.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,6 +39,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -188,7 +190,41 @@ class TestBotServiceTest {
         testBotService.maybeAutoReply(1L, 10L, "u1", "유저", "안녕");
 
         verify(geminiService).generateContent(contains("안녕"));
-        verify(messagingTemplate).convertAndSend(eq("/topic/room/1"), any(ChatMessagePayload.class));
+        // BOT_TYPING(답변 생성 중) → 실제 답장 순서로 2번 브로드캐스트
+        ArgumentCaptor<ChatMessagePayload> captor = ArgumentCaptor.forClass(ChatMessagePayload.class);
+        verify(messagingTemplate, times(2)).convertAndSend(eq("/topic/room/1"), captor.capture());
+        List<ChatMessagePayload> sent = captor.getAllValues();
+        assertThat(sent.get(0).getMsgType()).isEqualTo("BOT_TYPING");
+        assertThat(sent.get(1).getContent()).isEqualTo("반가워요!");
+    }
+
+    @Test
+    void Gemini프롬프트에_서비스_기능안내_포함() {
+        ChatRoom room = room(1L, null);
+        User bot = user(BOT, "테스트봇");
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById(BOT)).willReturn(Optional.of(bot));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, bot)).willReturn(true);
+        given(messageRepository.findMessagesBefore(eq(room), eq(10L), any(Pageable.class)))
+                .willReturn(List.of());
+        given(geminiService.generateContent(anyString())).willReturn("응!");
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
+
+        testBotService.maybeAutoReply(1L, 10L, "u1", "유저", "번역 기능 어떻게 써?");
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(geminiService).generateContent(promptCaptor.capture());
+        String prompt = promptCaptor.getValue();
+        // 서비스 안내 블록 + 환각 방지 문구
+        assertThat(prompt).contains("[Collab 서비스 기능 안내");
+        assertThat(prompt).contains("없는 기능을 지어내지 마");
+        // 주요 기능 키워드
+        assertThat(prompt).contains("실시간 번역");
+        assertThat(prompt).contains("엑셀 데이터 시각화");
+        assertThat(prompt).contains("AI 회의록");
+        assertThat(prompt).contains("음성·화상 채팅");
+        // 현재 메시지(마지막 턴)도 포함
+        assertThat(prompt).contains("유저: 번역 기능 어떻게 써?");
     }
 
     @Test
@@ -236,9 +272,9 @@ class TestBotServiceTest {
 
         testBotService.maybeAutoReply(1L, 10L, "u1", "유저", "안녕");
 
-        // 폴백이라도 메시지를 저장·발송한다
+        // 폴백이라도 메시지를 저장·발송한다 (BOT_TYPING + 폴백 메시지로 2번 브로드캐스트)
         verify(messageRepository).save(any(Message.class));
-        verify(messagingTemplate).convertAndSend(startsWith("/topic/room/"), any(ChatMessagePayload.class));
+        verify(messagingTemplate, times(2)).convertAndSend(startsWith("/topic/room/"), any(ChatMessagePayload.class));
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────

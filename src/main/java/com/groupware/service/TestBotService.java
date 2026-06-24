@@ -60,6 +60,22 @@ public class TestBotService {
             "사용자와 한국어로 자유롭게 대화해. 답변은 너무 길지 않게(2~4문장) 친근하고 자연스럽게 해. " +
             "마크다운 머리말이나 불필요한 접두어 없이 답변 본문만 출력해.";
 
+    /** 사용자가 기능/사용법을 물을 때 정확히 안내하도록 프롬프트에 붙이는 Collab 서비스 기능 요약. */
+    private static final String SERVICE_GUIDE =
+            "[Collab 서비스 기능 안내 — 사용자가 기능/사용법을 물으면 아래 내용을 바탕으로 정확히 안내해. " +
+            "아래에 없는 내용은 모른다고 솔직히 말하고, 없는 기능을 지어내지 마.]\n" +
+            "- 채팅: 실시간 메시지 송수신, 1:1 DM·단체 채팅방·팀 채널. 위로 스크롤하면 이전 메시지가 자동으로 로드되고, 날짜가 바뀌면 구분선이 표시돼.\n" +
+            "- 파일: 입력창의 클립 아이콘이나 채팅 영역에 드래그앤드롭으로 첨부(최대 50MB). 파일 패널에서 목록·다운로드·삭제할 수 있고, 올린 사람은 메시지 옆 x로 삭제 가능해.\n" +
+            "- 실시간 번역: 받은 메시지에 마우스를 올리면 나오는 번역 아이콘을 누르면 한국어로 번역돼(다시 누르면 숨김).\n" +
+            "- 음성·화상 채팅: 채팅방 헤더 아이콘으로 입장(WebRTC). 마이크 켜고 끄기, 녹음이 가능하고, 녹음 파일은 서버에 30일 보관되어 파일 패널에서 다운로드·삭제할 수 있어.\n" +
+            "- 그림판: 채팅방에서 펼치는 화이트보드로, 여러 명이 실시간으로 함께 그리고 PNG로 저장할 수 있어.\n" +
+            "- 엑셀 데이터 시각화: 첨부 메뉴의 'AI 데이터 분석'으로 엑셀/CSV를 올리면 AI가 차트를 만들어줘. 만든 차트는 방 전체에 실시간으로 공유되고 이미지로 다운로드할 수 있어.\n" +
+            "- AI 회의록: 채팅 내용이나 음성 파일을 바탕으로 회의록을 자동 작성하고 .md 파일로 내보낼 수 있어.\n" +
+            "- 일정: 사이드바와 헤더 캘린더에서 일정을 확인하고, 추가·수정할 때 제목·시간·참여인원·내용·카카오맵 위치를 지정할 수 있어.\n" +
+            "- 친구·팀: 친구 추가와 요청 수락/거절, 팀 생성·멤버 초대·권한(리더/매니저/멤버) 관리를 할 수 있어.\n" +
+            "- 검색·알림: 헤더에서 친구·팀·채팅방을 검색하고, 친구 요청·팀 초대 알림을 받을 수 있어.\n" +
+            "- 기능 테스트: 헤더의 '기능 테스트' 버튼을 누르면 내가 친구 요청을 보내고, 수락하면 지금처럼 대화하며 채팅 기능을 시험해 볼 수 있어.";
+
     private final UserRepository userRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final RoomMemberRepository roomMemberRepository;
@@ -187,6 +203,9 @@ public class TestBotService {
             return; // 봇이 참여한 방이 아니면 무시
         }
 
+        // 답변 생성 동안 프론트에 '답변 생성 중…' 인디케이터를 띄우도록 타이핑 신호 전송(테스트봇 전용).
+        broadcastBotTyping(room, bot);
+
         try {
             String reply = geminiService.generateContent(buildPrompt(room, triggerMsgIdx, senderNick, content));
             if (StringUtils.hasText(reply)) {
@@ -204,6 +223,7 @@ public class TestBotService {
                 room, triggerMsgIdx, PageRequest.of(0, CONTEXT_MESSAGE_LIMIT));
 
         StringBuilder sb = new StringBuilder(CHAT_SYSTEM_PROMPT);
+        sb.append("\n\n").append(SERVICE_GUIDE);
         sb.append("\n\n[최근 대화]\n");
         List<Message> chronological = new ArrayList<>(history);
         java.util.Collections.reverse(chronological); // DESC → 오래된 순
@@ -249,6 +269,23 @@ public class TestBotService {
         roomMemberRepository.save(m2);
 
         return room;
+    }
+
+    /**
+     * '답변 생성 중' 인디케이터용 컨트롤 이벤트. 실제 메시지로 저장하지 않고 방 토픽으로만 전송한다.
+     * 프론트는 BOT_TYPING 수신 시 인디케이터를 띄우고, 이어 도착하는 실제 메시지로 대체한다.
+     */
+    private void broadcastBotTyping(ChatRoom room, User bot) {
+        ChatMessagePayload payload = ChatMessagePayload.builder()
+                .roomIdx(room.getRoomIdx())
+                .userId(bot.getUserId())
+                .nickname(bot.getNick())
+                .avatarUrl(bot.getAvatarUrl())
+                .content("")
+                .msgType("BOT_TYPING")
+                .sentAt(LocalDateTime.now())
+                .build();
+        messagingTemplate.convertAndSend("/topic/room/" + room.getRoomIdx(), payload);
     }
 
     private void saveAndBroadcast(ChatRoom room, User bot, String content) {
