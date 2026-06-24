@@ -58,6 +58,8 @@ public enum ErrorCode {
     AI_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AI 회의록 생성에 실패했습니다."),
     TRANSLATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "번역에 실패했습니다."),
 
+    DEMO_ACCOUNTS_BUSY(HttpStatus.CONFLICT, "모든 테스트계정이 사용중입니다. 잠시 후 다시 시도해주세요."),
+
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다.");
 
     private final HttpStatus status;

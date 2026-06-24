@@ -175,6 +175,14 @@ public class AuthService {
         return base + tag;
     }
 
+    /**
+     * 시연(데모) 전용: 비밀번호 검증 없이 토큰을 발급한다.
+     * 반드시 서버가 통제하는 데모 계정(DemoAccountService의 허용목록)에만 호출해야 한다.
+     */
+    public AuthResponse issueDemoTokens(User user) {
+        return issueTokens(user);
+    }
+
     private AuthResponse issueTokens(User user) {
         // sessionId: access token에 sid 클레임으로 박고 redis에 현재 세션으로 기록 →
         // 새 로그인 시 sid 갱신되어 기존 access token이 서버에서 즉시 거부됨(새로고침 불필요)
