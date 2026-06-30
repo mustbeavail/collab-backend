@@ -130,6 +130,23 @@ public class AuthService {
         }
     }
 
+    /**
+     * userId만으로 서버 세션을 무효화한다(시연 종료 정리용).
+     * refresh 토큰이나 access 토큰 없이 호출되는 경로(WS 끊김 등)에서도 로그아웃 처리가 되도록,
+     * 저장된 현재 세션(refresh·session) 키를 userId 기준으로 지운다.
+     * session:{userId} 삭제로 남은 access token도 즉시 거부된다(sid 불일치).
+     */
+    public void logoutByUserId(String userId) {
+        if (userId == null) return;
+        String userSessionKey = USER_SESSION_KEY_PREFIX + userId;
+        String refreshToken = redisTemplate.opsForValue().get(userSessionKey);
+        if (refreshToken != null) {
+            redisTemplate.delete(REFRESH_KEY_PREFIX + refreshToken);
+        }
+        redisTemplate.delete(userSessionKey);
+        redisTemplate.delete(JwtUtil.SESSION_KEY_PREFIX + userId);
+    }
+
     public void checkEmail(String email) {
         if (userRepository.existsByUserIdAndWithdrawalAtIsNull(email)) {
             throw new CustomException(ErrorCode.EMAIL_ALREADY_EXISTS);

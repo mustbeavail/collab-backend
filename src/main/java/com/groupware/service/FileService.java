@@ -50,6 +50,7 @@ public class FileService {
     private final MessageRepository messageRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
+    private final DemoSessionStore demoSessionStore;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -88,6 +89,11 @@ public class FileService {
         uploadFile.setFileExtension(ext);
         uploadFile.setFileSize(file.getSize());
         uploadFile = uploadFileRepository.save(uploadFile);
+
+        // 시연 세션 중 업로드한 파일은 종료(중단/새로고침/탭종료) 시 일괄 정리되도록 서버측에 등록
+        if (demoSessionStore.isSession(userId)) {
+            demoSessionStore.addFile(userId, uploadFile.getFileIdx());
+        }
 
         return FileResponseDto.from(uploadFile);
     }

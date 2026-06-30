@@ -1,11 +1,14 @@
 package com.groupware.websocket;
 
 import com.groupware.dto.notification.NotificationPayload;
+import com.groupware.event.DemoSessionEndedEvent;
 import com.groupware.repository.FriendRepository;
 import com.groupware.repository.TeamMemberRepository;
 import com.groupware.repository.UserRepository;
+import com.groupware.service.DemoSessionStore;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -33,6 +36,8 @@ public class WebSocketEventListener {
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final SimpUserRegistry userRegistry;
+    private final DemoSessionStore demoSessionStore;
+    private final ApplicationEventPublisher eventPublisher;
 
     static final String ONLINE_PREFIX = "online:";
     private static final long ONLINE_TTL = 3600L;
@@ -77,6 +82,10 @@ public class WebSocketEventListener {
             if (!hasActiveSession(userId)) {
                 redisTemplate.delete(ONLINE_PREFIX + userId);
                 broadcastStatus(userId, "OFFLINE");
+                // 시연 계정이 끊긴 채 재접속 안 됐으면(새로고침·탭종료·크래시) 부산물 정리 트리거
+                if (demoSessionStore.isSession(userId)) {
+                    eventPublisher.publishEvent(new DemoSessionEndedEvent(userId));
+                }
             }
         }, OFFLINE_GRACE_SECONDS, TimeUnit.SECONDS);
     }
@@ -92,6 +101,15 @@ public class WebSocketEventListener {
             return true;
         }
         return Boolean.TRUE.equals(redisTemplate.hasKey(ONLINE_PREFIX + userId));
+    }
+
+    /**
+     * 끊김 유예 없이 즉시 오프라인 처리한다(시연 종료 시 계정 락 즉시 해제용).
+     * online 키를 지우고 친구·팀 동료에게 OFFLINE을 브로드캐스트한다.
+     */
+    public void markOfflineNow(String userId) {
+        redisTemplate.delete(ONLINE_PREFIX + userId);
+        broadcastStatus(userId, "OFFLINE");
     }
 
     private void broadcastStatus(String userId, String status) {

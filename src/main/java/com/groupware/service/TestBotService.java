@@ -180,6 +180,24 @@ public class TestBotService {
         saveAndBroadcast(room, bot, WELCOME_MESSAGE);
     }
 
+    /**
+     * 시연 종료 시 해당 유저와 봇 사이의 관계를 정리한다(시연계정 전용 호출).
+     * 친구관계(요청/수락, 양방향)를 모두 삭제하고, 봇 DM 방에서 유저를 나가게 처리한다.
+     * 프론트 추적 누락(예: 챗봇 단계 전 조기 중단)·이전 시연 잔재까지 확실히 정리하기 위한 백엔드 백스톱.
+     */
+    @Transactional
+    public void cleanupBotRelationship(String userId) {
+        User bot = userRepository.findById(BOT_USER_ID).orElse(null);
+        User user = userRepository.findById(userId).orElse(null);
+        if (bot == null || user == null) return;
+
+        friendRepository.deleteAll(friendRepository.findRelationships(user, bot));
+
+        chatRoomRepository.findDmRoom(bot, user).ifPresent(room ->
+                roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(room, user)
+                        .ifPresent(m -> m.setExitAt(LocalDateTime.now())));
+    }
+
     // ─── 자동 답장 ─────────────────────────────────────────────────────────
 
     /**

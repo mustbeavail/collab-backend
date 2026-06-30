@@ -38,6 +38,9 @@ public class DemoAccountService {
     private final WebSocketEventListener webSocketEventListener;
     private final AuthService authService;
     private final StringRedisTemplate redisTemplate;
+    private final TestBotService testBotService;
+    private final DemoSessionStore demoSessionStore;
+    private final FileService fileService;
 
     public AuthResponse acquireDemoAccount() {
         for (String userId : DEMO_ACCOUNTS) {
@@ -54,8 +57,41 @@ public class DemoAccountService {
                 redisTemplate.delete(DEMO_LOCK_PREFIX + userId); // 예약 해제 후 다음 후보
                 continue;
             }
+            // 시연 세션 시작 표시(이후 업로드 파일 추적·종료 정리 판정에 사용)
+            demoSessionStore.startSession(userId);
             return authService.issueDemoTokens(user);
         }
         throw new CustomException(ErrorCode.DEMO_ACCOUNTS_BUSY);
+    }
+
+    /**
+     * 시연 종료 시 한 곳에서 모든 정리를 수행한다(서버 일원화).
+     * 트리거: ① 중단/완료(POST /api/demo/release) ② 새로고침·탭종료(release-beacon) ③ 크래시·강제종료(WS 끊김 이벤트).
+     * 어느 경로로 들어와도 동일하게 동작하며, 세션 마커로 중복 호출을 무력화한다(idempotent).
+     *
+     * <p>정리 내용: 시연 중 업로드 파일 삭제 → 봇 친구/DM 정리 → demo-lock·online 해제 → 세션/파일 마커 삭제.
+     * 허용목록(시연계정)이며 세션 마커가 있을 때만 동작 → 실유저·수동 로그인 데이터는 건드리지 않는다.
+     */
+    public void cleanupDemoSession(String userId) {
+        if (userId == null || !DEMO_ACCOUNTS.contains(userId)) return;
+        if (!demoSessionStore.isSession(userId)) {
+            // 이미 정리됐거나 시연 세션이 아님 → 혹시 남은 예약만 안전하게 해제하고 종료
+            redisTemplate.delete(DEMO_LOCK_PREFIX + userId);
+            return;
+        }
+
+        // 1) 시연 중 업로드한 파일 삭제(개별 실패는 무시)
+        for (Long fileIdx : demoSessionStore.getFiles(userId)) {
+            try { fileService.delete(userId, fileIdx); } catch (Exception ignored) { /* 이미 삭제 등 */ }
+        }
+        // 2) 봇 친구·DM 정리(양방향·요청/수락, 봇 DM 나가기)
+        testBotService.cleanupBotRelationship(userId);
+        // 3) 서버 세션 로그아웃 — 중단 버튼 외(새로고침·탭종료·크래시) 경로도 토큰 없이 세션을 무효화한다.
+        authService.logoutByUserId(userId);
+        // 4) 예약·온라인 즉시 해제(3분 대기 없이 바로 재시연 가능)
+        redisTemplate.delete(DEMO_LOCK_PREFIX + userId);
+        webSocketEventListener.markOfflineNow(userId);
+        // 5) 세션·파일 마커 정리(이후 중복 트리거는 no-op)
+        demoSessionStore.endSession(userId);
     }
 }

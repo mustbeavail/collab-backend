@@ -394,6 +394,27 @@ class AuthServiceTest {
         verify(redisTemplate, never()).delete("user:test@example.com");
     }
 
+    @Test
+    void userId로_로그아웃_시_refresh_user_session_키_삭제() {
+        given(valueOps.get("user:test@example.com")).willReturn("cur-refresh-token");
+
+        authService.logoutByUserId("test@example.com");
+
+        verify(redisTemplate).delete("refresh:cur-refresh-token");
+        verify(redisTemplate).delete("user:test@example.com");
+        verify(redisTemplate).delete("session:test@example.com"); // 남은 access token 즉시 거부
+    }
+
+    @Test
+    void userId로_로그아웃_시_저장된_refresh없어도_session키_삭제() {
+        given(valueOps.get("user:test@example.com")).willReturn(null);
+
+        authService.logoutByUserId("test@example.com");
+
+        verify(redisTemplate).delete("user:test@example.com");
+        verify(redisTemplate).delete("session:test@example.com");
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────
 
     private SignupRequest signupRequest(String email, String password, String nickname, String about) {

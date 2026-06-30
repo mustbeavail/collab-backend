@@ -51,6 +51,7 @@ class FileServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private MessageRepository messageRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
+    @Mock private DemoSessionStore demoSessionStore;
     @Spy private ObjectMapper objectMapper = new ObjectMapper();
 
     @TempDir Path tempDir;

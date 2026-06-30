@@ -173,6 +173,38 @@ class TestBotServiceTest {
         verify(messagingTemplate).convertAndSend(eq("/topic/room/5"), any(ChatMessagePayload.class));
     }
 
+    // ─── cleanupBotRelationship (시연 종료 정리) ───────────────────────────
+
+    @Test
+    void 시연종료_봇친구삭제_및_DM나가기() {
+        User bot = user(BOT, "테스트봇");
+        User user = user("test3@test.com", "유저");
+        Friend rel = new Friend();
+        rel.setUser(bot); rel.setFriend(user); rel.setStatus("ACCEPTED");
+        ChatRoom dm = room(7L, null);
+        com.groupware.domain.RoomMember member = new com.groupware.domain.RoomMember();
+        member.setChatRoom(dm); member.setUser(user);
+        given(userRepository.findById(BOT)).willReturn(Optional.of(bot));
+        given(userRepository.findById("test3@test.com")).willReturn(Optional.of(user));
+        given(friendRepository.findRelationships(user, bot)).willReturn(List.of(rel));
+        given(chatRoomRepository.findDmRoom(bot, user)).willReturn(Optional.of(dm));
+        given(roomMemberRepository.findByChatRoomAndUserAndExitAtIsNull(dm, user)).willReturn(Optional.of(member));
+
+        testBotService.cleanupBotRelationship("test3@test.com");
+
+        verify(friendRepository).deleteAll(List.of(rel));
+        assertThat(member.getExitAt()).isNotNull(); // DM에서 나감 처리
+    }
+
+    @Test
+    void 시연종료_봇이나_유저없으면_무시() {
+        given(userRepository.findById(BOT)).willReturn(Optional.empty());
+
+        testBotService.cleanupBotRelationship("test3@test.com");
+
+        verify(friendRepository, never()).deleteAll(any());
+    }
+
     // ─── maybeAutoReply ────────────────────────────────────────────────────
 
     @Test

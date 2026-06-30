@@ -36,6 +36,9 @@ class DemoAccountServiceTest {
     @Mock private WebSocketEventListener webSocketEventListener;
     @Mock private AuthService authService;
     @Mock private StringRedisTemplate redisTemplate;
+    @Mock private TestBotService testBotService;
+    @Mock private DemoSessionStore demoSessionStore;
+    @Mock private FileService fileService;
     @Mock private ValueOperations<String, String> valueOps;
 
     private User user(String id) {
@@ -63,6 +66,8 @@ class DemoAccountServiceTest {
         assertThat(result).isSameAs(expected);
         // test3에서 끝났으므로 test4는 확인하지 않음
         verify(webSocketEventListener, never()).isOnline("test4@test.com");
+        // 시연 세션 시작 표시
+        verify(demoSessionStore).startSession("test3@test.com");
     }
 
     @Test
@@ -76,6 +81,54 @@ class DemoAccountServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.DEMO_ACCOUNTS_BUSY);
 
         verify(authService, never()).issueDemoTokens(any());
+    }
+
+    @Test
+    void 시연종료_파일삭제_봇정리_락online해제_마커정리() {
+        given(demoSessionStore.isSession("test3@test.com")).willReturn(true);
+        given(demoSessionStore.getFiles("test3@test.com")).willReturn(java.util.Set.of(11L, 12L));
+
+        service.cleanupDemoSession("test3@test.com");
+
+        verify(fileService).delete("test3@test.com", 11L);
+        verify(fileService).delete("test3@test.com", 12L);
+        verify(testBotService).cleanupBotRelationship("test3@test.com");
+        verify(authService).logoutByUserId("test3@test.com"); // 모든 종료 경로에서 서버 세션 로그아웃
+        verify(redisTemplate).delete("demo-lock:test3@test.com");
+        verify(webSocketEventListener).markOfflineNow("test3@test.com");
+        verify(demoSessionStore).endSession("test3@test.com");
+    }
+
+    @Test
+    void 시연종료_세션마커없으면_락만해제_정리안함() {
+        given(demoSessionStore.isSession("test3@test.com")).willReturn(false);
+
+        service.cleanupDemoSession("test3@test.com");
+
+        verify(redisTemplate).delete("demo-lock:test3@test.com"); // 안전하게 예약만 해제
+        verify(fileService, never()).delete(any(), any());
+        verify(testBotService, never()).cleanupBotRelationship(any());
+        verify(authService, never()).logoutByUserId(any());
+        verify(webSocketEventListener, never()).markOfflineNow(any());
+        verify(demoSessionStore, never()).endSession(any());
+    }
+
+    @Test
+    void 시연종료_허용목록외_계정은_무시() {
+        service.cleanupDemoSession("hacker@test.com");
+
+        verify(redisTemplate, never()).delete(any(String.class));
+        verify(testBotService, never()).cleanupBotRelationship(any());
+        verify(demoSessionStore, never()).isSession(any());
+    }
+
+    @Test
+    void 시연종료_null이면_무시() {
+        service.cleanupDemoSession(null);
+
+        verify(redisTemplate, never()).delete(any(String.class));
+        verify(testBotService, never()).cleanupBotRelationship(any());
+        verify(demoSessionStore, never()).isSession(any());
     }
 
     @Test
