@@ -28,7 +28,8 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
     @Query("SELECT tm FROM TeamMember tm WHERE tm.team.teamIdx = :teamIdx AND tm.user.userId = :userId AND tm.exitAt IS NULL")
     Optional<TeamMember> findCurrentByTeamIdxAndUserId(@Param("teamIdx") Long teamIdx, @Param("userId") String userId);
 
-    @Query("SELECT tm FROM TeamMember tm JOIN FETCH tm.team WHERE tm.user.userId = :userId AND tm.status = 'PENDING' AND tm.exitAt IS NULL")
+    // 삭제된 팀(delAt != null)의 초대는 제외(초대→팀삭제 시 죽은 초대 숨김)
+    @Query("SELECT tm FROM TeamMember tm JOIN FETCH tm.team WHERE tm.user.userId = :userId AND tm.status = 'PENDING' AND tm.exitAt IS NULL AND tm.team.delAt IS NULL")
     List<TeamMember> findPendingInvitationsByUserId(@Param("userId") String userId);
 
     // 사용자가 현재 LEADER로 있는 활성 팀 멤버십(탈퇴 시 자동 위임 대상 팀 찾기)

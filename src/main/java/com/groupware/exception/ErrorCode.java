@@ -30,6 +30,7 @@ public enum ErrorCode {
     FRIEND_NOT_FOUND(HttpStatus.NOT_FOUND, "친구 관계를 찾을 수 없습니다."),
 
     TEAM_NOT_FOUND(HttpStatus.NOT_FOUND, "팀을 찾을 수 없습니다."),
+    TEAM_ALREADY_DELETED(HttpStatus.GONE, "이미 삭제된 팀입니다."),
     TEAM_ACCESS_DENIED(HttpStatus.FORBIDDEN, "팀에 대한 권한이 없습니다."),
     NOT_TEAM_MEMBER(HttpStatus.FORBIDDEN, "팀 멤버가 아닙니다."),
     TEAM_ALREADY_MEMBER(HttpStatus.CONFLICT, "이미 팀 멤버이거나 초대 대기 중입니다."),

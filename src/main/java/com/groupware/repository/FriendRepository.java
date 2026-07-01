@@ -18,11 +18,12 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
            "  OR (f.friend = :user AND f.user.withdrawalAt IS NULL))")
     List<Friend> findAcceptedFriends(@Param("user") User user);
 
-    @Query("SELECT f FROM Friend f JOIN FETCH f.user WHERE f.friend = :friend AND f.status = :status")
+    // 요청 보낸 상대가 탈퇴(withdrawalAt != null)했으면 받은 요청 목록에서 제외(죽은 요청 숨김)
+    @Query("SELECT f FROM Friend f JOIN FETCH f.user WHERE f.friend = :friend AND f.status = :status AND f.user.withdrawalAt IS NULL")
     List<Friend> findByFriendAndStatus(@Param("friend") User friend, @Param("status") String status);
 
-    // 내가 보낸(상대 응답 대기) 요청 — 대상(friend) 정보 fetch
-    @Query("SELECT f FROM Friend f JOIN FETCH f.friend WHERE f.user = :user AND f.status = :status")
+    // 내가 보낸(상대 응답 대기) 요청 — 대상(friend) 정보 fetch, 탈퇴한 대상은 제외
+    @Query("SELECT f FROM Friend f JOIN FETCH f.friend WHERE f.user = :user AND f.status = :status AND f.friend.withdrawalAt IS NULL")
     List<Friend> findByUserAndStatus(@Param("user") User user, @Param("status") String status);
 
     @Query("SELECT COUNT(f) > 0 FROM Friend f WHERE (f.user = :u1 AND f.friend = :u2) OR (f.user = :u2 AND f.friend = :u1)")

@@ -198,6 +198,13 @@ public class TeamService {
         if (!"PENDING".equals(invitation.getStatus())) {
             throw new CustomException(ErrorCode.TEAM_INVITATION_NOT_FOUND);
         }
+        // 초대 수락 전에 팀이 삭제되었으면 입장 불가(초대→삭제→수락 시나리오)
+        if (invitation.getTeam().getDelAt() != null) {
+            // 죽은 초대는 정리(다시 뜨지 않도록 exitAt 마킹)
+            invitation.setExitAt(LocalDateTime.now());
+            teamMemberRepository.save(invitation);
+            throw new CustomException(ErrorCode.TEAM_ALREADY_DELETED);
+        }
 
         invitation.setStatus("ACTIVE");
         invitation.setJoinAt(LocalDateTime.now());

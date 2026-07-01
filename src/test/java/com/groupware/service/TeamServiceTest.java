@@ -367,6 +367,26 @@ class TeamServiceTest {
     }
 
     @Test
+    void 초대_수락_이미_삭제된_팀_예외_그리고_초대정리() {
+        Team team = buildTeam(1L, "삭제된팀");
+        team.setDelAt(LocalDateTime.now()); // 수락 전에 팀이 삭제됨
+        User user = buildUser("uid-2", "수락자");
+        TeamMember invitation = buildTeamMemberWithStatus(team, user, "MEMBER", "PENDING");
+        ReflectionTestUtils.setField(invitation, "tmIdx", 10L);
+
+        given(teamMemberRepository.findById(10L)).willReturn(Optional.of(invitation));
+
+        assertThatThrownBy(() -> teamService.acceptInvitation("uid-2", 10L))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.TEAM_ALREADY_DELETED));
+
+        // 죽은 초대는 exitAt으로 정리되어 다시 뜨지 않음
+        assertThat(invitation.getExitAt()).isNotNull();
+        assertThat(invitation.getStatus()).isEqualTo("PENDING"); // ACTIVE로 전환되지 않음
+    }
+
+    @Test
     void 초대_거절_성공() {
         Team team = buildTeam(1L, "팀");
         User user = buildUser("uid-2", "거절자");

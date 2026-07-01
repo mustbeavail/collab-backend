@@ -47,6 +47,11 @@ public class FriendService {
         User target = userRepository.findById(dto.getTargetUserId())
                 .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
 
+        // 탈퇴한 회원에게는 친구 요청 불가
+        if (target.getWithdrawalAt() != null) {
+            throw new CustomException(ErrorCode.WITHDRAWN_USER);
+        }
+
         if (friendRepository.existsRelationship(me, target)) {
             throw new CustomException(ErrorCode.FRIEND_REQUEST_ALREADY_EXISTS);
         }
@@ -77,6 +82,14 @@ public class FriendService {
         User me = getUser(myUserId);
         Friend request = friendRepository.findByFriendIdxAndFriend(friendIdx, me)
                 .orElseThrow(() -> new CustomException(ErrorCode.FRIEND_REQUEST_NOT_FOUND));
+
+        // 요청을 보낸 상대가 그 사이 탈퇴했으면 친구로 등록 불가(요청→탈퇴→수락 시나리오)
+        if (request.getUser().getWithdrawalAt() != null) {
+            // 죽은 요청 정리(다시 뜨지 않도록 삭제)
+            friendRepository.delete(request);
+            throw new CustomException(ErrorCode.WITHDRAWN_USER);
+        }
+
         request.setStatus("ACCEPTED");
 
         // 테스트봇의 요청을 수락한 경우 → 봇이 DM 방을 만들고 안내 메시지를 보낸다

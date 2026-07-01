@@ -173,6 +173,31 @@ class TestBotServiceTest {
         verify(messagingTemplate).convertAndSend(eq("/topic/room/5"), any(ChatMessagePayload.class));
     }
 
+    @Test
+    void 봇메시지_방멤버에게_NEW_MESSAGE_알림() {
+        User bot = user(BOT, "테스트봇");
+        User user = user("u1", "유저");
+        ChatRoom room = room(5L, null);
+        com.groupware.domain.RoomMember botM = new com.groupware.domain.RoomMember();
+        botM.setChatRoom(room); botM.setUser(bot);
+        com.groupware.domain.RoomMember userM = new com.groupware.domain.RoomMember();
+        userM.setChatRoom(room); userM.setUser(user);
+
+        given(userRepository.findById(BOT)).willReturn(Optional.of(bot));
+        given(userRepository.findById("u1")).willReturn(Optional.of(user));
+        given(chatRoomRepository.findDmRoom(bot, user)).willReturn(Optional.of(room));
+        given(messageRepository.save(any(Message.class))).willAnswer(inv -> inv.getArgument(0));
+        given(roomMemberRepository.findAllActiveByRoom(room)).willReturn(List.of(botM, userM));
+
+        testBotService.onFriendshipWithBotAccepted("u1");
+
+        // 봇 자신은 제외하고 유저에게만 NEW_MESSAGE 알림 푸시(방을 안 열어둬도 알림이 오도록)
+        verify(messagingTemplate).convertAndSendToUser(
+                eq("u1"), eq("/queue/notifications"), any(NotificationPayload.class));
+        verify(messagingTemplate, never()).convertAndSendToUser(
+                eq(BOT), anyString(), any());
+    }
+
     // ─── cleanupBotRelationship (시연 종료 정리) ───────────────────────────
 
     @Test

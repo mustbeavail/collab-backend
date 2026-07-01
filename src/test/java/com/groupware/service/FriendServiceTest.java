@@ -125,6 +125,22 @@ class FriendServiceTest {
                         .isEqualTo(ErrorCode.USER_NOT_FOUND));
     }
 
+    @Test
+    void 탈퇴한_대상에게_요청_예외() {
+        User me = buildUser("uid-1", "me@test.com", "나");
+        User target = buildUser("uid-2", "other@test.com", "탈퇴자");
+        target.setWithdrawalAt(java.time.LocalDateTime.now());
+        FriendRequestDto dto = friendRequestDto("uid-2");
+
+        given(userRepository.findById("uid-1")).willReturn(Optional.of(me));
+        given(userRepository.findById("uid-2")).willReturn(Optional.of(target));
+
+        assertThatThrownBy(() -> friendService.sendRequest(dto, "uid-1"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.WITHDRAWN_USER));
+    }
+
     // ─── acceptRequest ────────────────────────────────────────────────────
 
     @Test
@@ -138,6 +154,25 @@ class FriendServiceTest {
         friendService.acceptRequest(1L, "uid-2");
 
         assertThat(pending.getStatus()).isEqualTo("ACCEPTED");
+    }
+
+    @Test
+    void 요청자가_탈퇴했으면_수락_불가_그리고_요청삭제() {
+        User me = buildUser("uid-2", "me@test.com", "나");
+        User withdrawnRequester = buildUser("uid-1", "a@b.com", "탈퇴요청자");
+        withdrawnRequester.setWithdrawalAt(java.time.LocalDateTime.now());
+        Friend pending = buildFriend(1L, withdrawnRequester, me, "PENDING");
+
+        given(userRepository.findById("uid-2")).willReturn(Optional.of(me));
+        given(friendRepository.findByFriendIdxAndFriend(1L, me)).willReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> friendService.acceptRequest(1L, "uid-2"))
+                .isInstanceOf(CustomException.class)
+                .satisfies(e -> assertThat(((CustomException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.WITHDRAWN_USER));
+
+        assertThat(pending.getStatus()).isEqualTo("PENDING"); // ACCEPTED로 전환 안 됨
+        verify(friendRepository).delete(pending);              // 죽은 요청 정리
     }
 
     @Test

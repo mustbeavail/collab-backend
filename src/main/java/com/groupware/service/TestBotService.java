@@ -327,5 +327,28 @@ public class TestBotService {
                 .sentAt(msg.getSentAt())
                 .build();
         messagingTemplate.convertAndSend("/topic/room/" + room.getRoomIdx(), payload);
+
+        // 방을 열어두지 않은 유저에게도 알림이 가도록 각 멤버 user-queue로 NEW_MESSAGE 푸시
+        // (일반 메시지의 ChatService.notifyRoomMembers와 동일 — 봇 메시지엔 이게 빠져 알림이 안 오던 문제)
+        notifyRoomMembers(room, bot, msg.getContent());
+    }
+
+    /** 봇이 보낸 메시지도 방 멤버(봇 제외)의 알림 큐로 NEW_MESSAGE를 보낸다. */
+    private void notifyRoomMembers(ChatRoom room, User sender, String content) {
+        String preview = (content != null && content.length() > 50) ? content.substring(0, 50) : content;
+        roomMemberRepository.findAllActiveByRoom(room).stream()
+                .map(RoomMember::getUser)
+                .filter(u -> !u.getUserId().equals(sender.getUserId()))
+                .forEach(u -> messagingTemplate.convertAndSendToUser(
+                        u.getUserId(),
+                        "/queue/notifications",
+                        NotificationPayload.builder()
+                                .type("NEW_MESSAGE")
+                                .roomIdx(room.getRoomIdx())
+                                .userId(sender.getUserId())
+                                .nickname(sender.getNick())
+                                .content(preview)
+                                .roomName(room.getRoomName())
+                                .build()));
     }
 }
