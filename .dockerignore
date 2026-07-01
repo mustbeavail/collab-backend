@@ -1,0 +1,12 @@
+target/
+.git/
+.gitignore
+*.log
+logs/
+uploads/
+.idea/
+*.iml
+src/test/
+db/
+HELP.md
+application-local.yml

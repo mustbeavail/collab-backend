@@ -9,6 +9,7 @@ server:
 
 app:
   cookie:
-    # 운영: 프론트/백 도메인이 달라 cross-site 요청에 쿠키가 붙어야 하므로 None + Secure 필수
-    same-site: None
+    # 운영: 프론트/백을 같은 도메인(collab.p-e.kr) 경로분리로 서빙 → same-origin 이므로 Lax 로 충분.
+    # HTTPS 이므로 secure=true (평문 HTTP였다면 secure=false 로 내려야 쿠키가 붙음).
+    same-site: Lax
     secure: true
