@@ -24,7 +24,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,7 +35,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class MeetingNoteServiceTest {
@@ -45,6 +50,8 @@ class MeetingNoteServiceTest {
     @Mock private TeamMemberRepository teamMemberRepository;
     @Mock private UserRepository userRepository;
     @Mock private MessageRepository messageRepository;
+    @Mock private GeminiService geminiService;
+    @Mock private AudioTranscoder audioTranscoder;
 
     private User user;
     private ChatRoom room;
@@ -291,6 +298,59 @@ class MeetingNoteServiceTest {
         assertThatThrownBy(() -> meetingNoteService.deleteNote("a@test.com", 99L))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.MEETING_NOTE_NOT_FOUND);
+    }
+
+    // ── 음성 회의록 트랜스코딩(webm→ogg) ──────────────────────
+
+    private void givenVoiceAccess() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
+            MeetingNote n = inv.getArgument(0);
+            ReflectionTestUtils.setField(n, "noteIdx", 1L);
+            ReflectionTestUtils.setField(n, "createdAt", LocalDateTime.of(2026, 6, 7, 10, 0));
+            return n;
+        });
+    }
+
+    @Test
+    void 음성회의록_webm은_ogg로_변환후_전송() {
+        givenVoiceAccess();
+        MultipartFile webm = new MockMultipartFile("audio", "seg.webm", "audio/webm", new byte[]{1, 2, 3});
+        given(audioTranscoder.toOggOpus(any())).willReturn(new byte[]{4, 5, 6});
+        given(geminiService.generateContentFromAudio(any(), eq("audio/ogg"))).willReturn("## 참석자\nAlice");
+
+        MeetingNoteResponse result = meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of(webm));
+
+        assertThat(result.getContent()).isEqualTo("## 참석자\nAlice");
+        verify(audioTranscoder).toOggOpus(any());
+        // 원본 webm MIME이 아니라 변환된 audio/ogg로 Gemini 호출됨
+        verify(geminiService).generateContentFromAudio(any(), eq("audio/ogg"));
+    }
+
+    @Test
+    void 음성회의록_지원포맷mp3는_변환없이_전송() {
+        givenVoiceAccess();
+        MultipartFile mp3 = new MockMultipartFile("audio", "seg.mp3", "audio/mpeg", new byte[]{1, 2, 3});
+        given(geminiService.generateContentFromAudio(any(), eq("audio/mpeg"))).willReturn("## 참석자\nBob");
+
+        MeetingNoteResponse result = meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of(mp3));
+
+        assertThat(result.getContent()).isEqualTo("## 참석자\nBob");
+        verify(audioTranscoder, never()).toOggOpus(any());
+        verify(geminiService).generateContentFromAudio(any(), eq("audio/mpeg"));
+    }
+
+    @Test
+    void 음성회의록_오디오파일없음_예외() {
+        given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
+        given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+
+        assertThatThrownBy(() -> meetingNoteService.generateVoiceMinutes("a@test.com", 1L, List.of()))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.NO_AUDIO_FILES);
     }
 
     // ── 시간범위(항목2) ──────────────────────────────────────

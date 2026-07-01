@@ -8,6 +8,10 @@ RUN mvn -B -Dmaven.test.skip=true clean package
 # ── run stage ───────────────────────────────────────────────
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+# 음성 회의록: webm→ogg 변환용 ffmpeg (PATH의 'ffmpeg' 로 호출됨)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/collab-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8080
 # JAVA_OPTS(힙 캡 등)는 compose env로 주입

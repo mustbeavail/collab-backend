@@ -50,6 +50,7 @@ class MeetingNoteAiServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private MessageRepository messageRepository;
     @Mock private GeminiService geminiService;
+    @Mock private AudioTranscoder audioTranscoder;
 
     private User user;
     private ChatRoom room;
@@ -191,6 +192,7 @@ class MeetingNoteAiServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(audioTranscoder.toOggOpus(any())).willReturn(new byte[50]); // webm → ogg 변환 stub
         given(geminiService.generateContentFromAudio(any(), anyString())).willReturn("## 참석자\nAlice");
         given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {
             MeetingNote n = inv.getArgument(0);
@@ -213,6 +215,7 @@ class MeetingNoteAiServiceTest {
         given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(userRepository.findById("a@test.com")).willReturn(Optional.of(user));
         given(roomMemberRepository.existsByChatRoomAndUserAndExitAtIsNull(room, user)).willReturn(true);
+        given(audioTranscoder.toOggOpus(any())).willReturn(new byte[50]); // webm → ogg 변환 stub
         given(geminiService.generateContentFromAudio(any(), anyString())).willReturn("## 참석자\nAlice");
         given(geminiService.mergeMinutesSections(any())).willReturn("## 참석자\nAlice, Bob\n\n## 결정사항\n없음");
         given(meetingNoteRepository.save(any(MeetingNote.class))).willAnswer(inv -> {

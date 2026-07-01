@@ -56,6 +56,7 @@ public enum ErrorCode {
     NO_MESSAGES_IN_RANGE(HttpStatus.BAD_REQUEST, "선택한 시간 범위에 메시지가 없습니다."),
     NO_AUDIO_FILES(HttpStatus.BAD_REQUEST, "오디오 파일이 없습니다."),
     AUDIO_TOO_LARGE(HttpStatus.BAD_REQUEST, "오디오 파일 크기는 15MB를 초과할 수 없습니다."),
+    AUDIO_TRANSCODE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "오디오 파일 변환에 실패했습니다."),
     AI_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "AI 회의록 생성에 실패했습니다."),
     TRANSLATE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "번역에 실패했습니다."),
 

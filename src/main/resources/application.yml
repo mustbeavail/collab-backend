@@ -69,6 +69,11 @@ gemini:
   api-key: ${GEMINI_API_KEY}
   model: gemini-2.5-flash
 
+# 음성 회의록: webm 등 Gemini 미지원 오디오를 ogg(opus)로 변환하는 ffmpeg 실행 경로.
+# Docker 이미지에 ffmpeg 설치 → PATH의 'ffmpeg' 사용(기본값). 로컬은 application-local.yml에서 override.
+ffmpeg:
+  path: ${FFMPEG_PATH:ffmpeg}
+
 google:
   translate:
     api-key: ${GOOGLE_TRANSLATE_API_KEY}

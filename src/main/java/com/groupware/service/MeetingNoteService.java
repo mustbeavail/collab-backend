@@ -45,6 +45,12 @@ public class MeetingNoteService {
     private final UserRepository userRepository;
     private final MessageRepository messageRepository;
     private final GeminiService geminiService;
+    private final AudioTranscoder audioTranscoder;
+
+    // Gemini generateContent 인라인 오디오가 직접 지원하는 MIME(이 외에는 ogg로 트랜스코딩). webm은 미포함.
+    private static final java.util.Set<String> GEMINI_AUDIO_MIME = java.util.Set.of(
+            "audio/wav", "audio/mp3", "audio/mpeg", "audio/aiff",
+            "audio/aac", "audio/ogg", "audio/flac", "audio/mp4", "audio/m4a");
 
     private static final DateTimeFormatter DISPLAY_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter MSG_FMT = DateTimeFormatter.ofPattern("HH:mm");
@@ -189,7 +195,13 @@ public class MeetingNoteService {
         try {
             for (MultipartFile file : audioFiles) {
                 String mimeType = file.getContentType() != null ? file.getContentType() : "audio/webm";
-                partialMinutes.add(geminiService.generateContentFromAudio(file.getBytes(), mimeType));
+                byte[] audioData = file.getBytes();
+                // Gemini 미지원 포맷(webm 등)은 ogg(opus)로 변환 후 전송
+                if (needsTranscode(mimeType)) {
+                    audioData = audioTranscoder.toOggOpus(audioData);
+                    mimeType = "audio/ogg";
+                }
+                partialMinutes.add(geminiService.generateContentFromAudio(audioData, mimeType));
             }
         } catch (IOException e) {
             log.error("오디오 파일 읽기 실패: {}", e.getMessage());
@@ -208,6 +220,12 @@ public class MeetingNoteService {
         note.setTitle(title);
         note.setContent(aiContent);
         return MeetingNoteResponse.from(meetingNoteRepository.save(note));
+    }
+
+    // Gemini가 직접 처리 못하는 오디오 MIME이면 트랜스코딩 필요. codecs 파라미터(;codecs=opus 등)는 제거 후 판별.
+    private boolean needsTranscode(String mimeType) {
+        String base = mimeType.split(";")[0].trim().toLowerCase();
+        return !GEMINI_AUDIO_MIME.contains(base);
     }
 
     @Transactional

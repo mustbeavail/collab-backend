@@ -22,3 +22,6 @@ application-local.yml
 
 # User-uploaded files (runtime, not source)
 uploads/
+
+# Local static ffmpeg binary (운영은 Docker 이미지에 apt로 설치, 로컬 테스트용만 여기 배치)
+tools/ffmpeg/
